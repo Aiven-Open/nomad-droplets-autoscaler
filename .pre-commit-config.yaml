@@ -1,0 +1,20 @@
+# Copyright (c) 2025 Aiven, Helsinki, Finland. https://aiven.io/
+# SPDX-License-Identifier: MPL-2.0
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.3.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.1.6
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        description: Fast linters runner for Go.
+        entry: golangci-lint run --new-from-rev HEAD --fix
+        types: [go]
+        language: golang
+        require_serial: true
+        pass_filenames: false

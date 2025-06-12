@@ -3,7 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"time"
 
@@ -28,7 +28,12 @@ type dropletTemplate struct {
 	userData   string
 }
 
-func (t *TargetPlugin) scaleOut(ctx context.Context, desired, diff int64, template *dropletTemplate, config map[string]string) error {
+func (t *TargetPlugin) scaleOut(
+	ctx context.Context,
+	desired, diff int64,
+	template *dropletTemplate,
+	config map[string]string,
+) error {
 	log := t.logger.With("action", "scale_out", "tag", template.name, "count", diff)
 
 	log.Debug("creating DigitalOcean droplets")
@@ -50,7 +55,7 @@ func (t *TargetPlugin) scaleOut(ctx context.Context, desired, diff int64, templa
 		}
 
 		if len(template.userData) != 0 {
-			content, err := ioutil.ReadFile(template.userData)
+			content, err := os.ReadFile(template.userData)
 			if err != nil {
 				return fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err)
 			}
@@ -58,7 +63,6 @@ func (t *TargetPlugin) scaleOut(ctx context.Context, desired, diff int64, templa
 		}
 
 		_, _, err := t.client.Droplets.Create(ctx, createRequest)
-
 		if err != nil {
 			return fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err)
 		}
@@ -75,15 +79,19 @@ func (t *TargetPlugin) scaleOut(ctx context.Context, desired, diff int64, templa
 	return nil
 }
 
-func (t *TargetPlugin) scaleIn(ctx context.Context, desired, diff int64, template *dropletTemplate, config map[string]string) error {
-
+func (t *TargetPlugin) scaleIn(
+	ctx context.Context,
+	desired, diff int64,
+	template *dropletTemplate,
+	config map[string]string,
+) error {
 	ids, err := t.clusterUtils.RunPreScaleInTasks(ctx, config, int(diff))
 	if err != nil {
 		return fmt.Errorf("failed to perform pre-scale Nomad scale in tasks: %v", err)
 	}
 
 	// Grab the instanceIDs
-	var instanceIDs = map[string]bool{}
+	instanceIDs := map[string]bool{}
 
 	for _, node := range ids {
 		instanceIDs[node.RemoteResourceID] = true
@@ -115,8 +123,11 @@ func (t *TargetPlugin) scaleIn(ctx context.Context, desired, diff int64, templat
 	return nil
 }
 
-func (t *TargetPlugin) ensureDropletsAreStable(ctx context.Context, template *dropletTemplate, desired int64) error {
-
+func (t *TargetPlugin) ensureDropletsAreStable(
+	ctx context.Context,
+	template *dropletTemplate,
+	desired int64,
+) error {
 	f := func(ctx context.Context) (bool, error) {
 		_, active, err := t.countDroplets(ctx, template)
 		if desired == active || err != nil {
@@ -129,7 +140,11 @@ func (t *TargetPlugin) ensureDropletsAreStable(ctx context.Context, template *dr
 	return retry(ctx, defaultRetryInterval, defaultRetryLimit, f)
 }
 
-func (t *TargetPlugin) deleteDroplets(ctx context.Context, tag string, instanceIDs map[string]bool) error {
+func (t *TargetPlugin) deleteDroplets(
+	ctx context.Context,
+	tag string,
+	instanceIDs map[string]bool,
+) error {
 	// create options. initially, these will be blank
 	var dropletsToDelete []int
 	opt := &godo.ListOptions{}
@@ -154,7 +169,8 @@ func (t *TargetPlugin) deleteDroplets(ctx context.Context, tag string, instanceI
 		}
 
 		// if we deleted all droplets or if we are at the last page, break out the for loop
-		if len(dropletsToDelete) == len(instanceIDs) || resp.Links == nil || resp.Links.IsLastPage() {
+		if len(dropletsToDelete) == len(instanceIDs) || resp.Links == nil ||
+			resp.Links.IsLastPage() {
 			break
 		}
 
@@ -170,7 +186,10 @@ func (t *TargetPlugin) deleteDroplets(ctx context.Context, tag string, instanceI
 	return nil
 }
 
-func (t *TargetPlugin) countDroplets(ctx context.Context, template *dropletTemplate) (int64, int64, error) {
+func (t *TargetPlugin) countDroplets(
+	ctx context.Context,
+	template *dropletTemplate,
+) (int64, int64, error) {
 	var total int64 = 0
 	var ready int64 = 0
 

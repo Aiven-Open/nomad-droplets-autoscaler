@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -93,7 +92,10 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 		t.client = godo.NewFromToken(tokenFromEnv)
 	}
 
-	clusterUtils, err := scaleutils.NewClusterScaleUtils(nomad.ConfigFromNamespacedMap(config), t.logger)
+	clusterUtils, err := scaleutils.NewClusterScaleUtils(
+		nomad.ConfigFromNamespacedMap(config),
+		t.logger,
+	)
 	if err != nil {
 		return err
 	}
@@ -180,7 +182,6 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 }
 
 func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*dropletTemplate, error) {
-
 	// We cannot scale droplets without knowing the name.
 	name, ok := t.getValue(config, configKeyName)
 	if !ok {
@@ -219,14 +220,16 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 	tagsAsString, _ := t.getValue(config, configKeyTags)
 	userData, _ := t.getValue(config, configKeyUserData)
 
-	var tags = []string{name}
+	tags := []string{name}
 	if len(tagsAsString) != 0 {
 		tags = append(tags, strings.Split(tagsAsString, ",")...)
 	}
 
-	var sshKeyFingerprints = []string{}
+	sshKeyFingerprints := []string{}
 	if len(sshKeyFingerprintAsString) != 0 {
-		sshKeyFingerprints = append(sshKeyFingerprints, strings.Split(sshKeyFingerprintAsString, ",")...)
+		sshKeyFingerprints = append(
+			sshKeyFingerprints,
+			strings.Split(sshKeyFingerprintAsString, ",")...)
 	}
 
 	return &dropletTemplate{
@@ -280,7 +283,7 @@ func pathOrContents(poc string) (string, error) {
 	}
 
 	if _, err := os.Stat(path); err == nil {
-		contents, err := ioutil.ReadFile(path)
+		contents, err := os.ReadFile(path)
 		if err != nil {
 			return string(contents), err
 		}

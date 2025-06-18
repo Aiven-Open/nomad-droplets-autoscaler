@@ -26,6 +26,7 @@ type dropletTemplate struct {
 	sshKeys    []string
 	tags       []string
 	userData   string
+	ipv6       bool
 }
 
 func (t *TargetPlugin) scaleOut(
@@ -48,6 +49,7 @@ func (t *TargetPlugin) scaleOut(
 				ID: template.snapshotID,
 			},
 			Tags: template.tags,
+			IPv6: template.ipv6,
 		}
 
 		if len(template.sshKeys) != 0 {

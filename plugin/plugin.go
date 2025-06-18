@@ -22,7 +22,11 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	configKeyAssignReservedAddresses = "assign_reserved_addresses"
+	// reservedAddressTag is applied to droplets which should be allocated
+	// reserved (static) IP addresses, both for IPv4 and IPv6
+	reservedIPv4AddressRequiredTag = "nomad-autoscaler-reserved-ipv4-address"
+	reservedIPv6AddressRequiredTag = "nomad-autoscaler-reserved-ipv6-address"
+
 	configKeyCreateReservedAddresses = "create_reserved_addresses"
 	configKeyReserveIPv4Addresses    = "reserve_ipv4_addresses"
 	configKeyReserveIPv6Addresses    = "reserve_ipv6_addresses"
@@ -62,6 +66,8 @@ type TargetPlugin struct {
 	// clusterUtils provides general cluster scaling utilities for querying the
 	// state of nodes pools and performing scaling tasks.
 	clusterUtils *scaleutils.ClusterScaleUtils
+
+	reservedAddressesPool *ReservedAddressesPool
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
@@ -96,6 +102,10 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 		}
 		t.client = godo.NewFromToken(tokenFromEnv)
 	}
+	t.reservedAddressesPool = CreateReservedAddressesPool(
+		t.logger,
+		WithGodoClient(t.client),
+	)
 
 	clusterUtils, err := scaleutils.NewClusterScaleUtils(
 		nomad.ConfigFromNamespacedMap(config),
@@ -231,11 +241,53 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		return nil, fmt.Errorf("invalid value for config param %s", configKeyIPv6)
 	}
 
+	createReservedAddressesS, ok := t.getValue(config, configKeyCreateReservedAddresses)
+	if !ok {
+		createReservedAddressesS = "false"
+	}
+	createReservedAddresses, err := strconv.ParseBool(createReservedAddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyCreateReservedAddresses,
+		)
+	}
+
+	reserveIPv4AddressesS, ok := t.getValue(config, configKeyReserveIPv4Addresses)
+	if !ok {
+		reserveIPv4AddressesS = "false"
+	}
+	reserveIPv4Addresses, err := strconv.ParseBool(reserveIPv4AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv4Addresses,
+		)
+	}
+
+	reserveIPv6AddressesS, ok := t.getValue(config, configKeyReserveIPv6Addresses)
+	if !ok {
+		reserveIPv6AddressesS = "false"
+	}
+	reserveIPv6Addresses, err := strconv.ParseBool(reserveIPv6AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv6Addresses,
+		)
+	}
+
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)
 	tagsAsString, _ := t.getValue(config, configKeyTags)
 	userData, _ := t.getValue(config, configKeyUserData)
 
 	tags := []string{name}
+	if reserveIPv4Addresses {
+		tags = append(tags, reservedIPv4AddressRequiredTag)
+	}
+	if reserveIPv6Addresses {
+		tags = append(tags, reservedIPv6AddressRequiredTag)
+	}
 	if len(tagsAsString) != 0 {
 		tags = append(tags, strings.Split(tagsAsString, ",")...)
 	}

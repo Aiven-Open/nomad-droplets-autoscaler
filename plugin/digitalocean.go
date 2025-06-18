@@ -88,6 +88,19 @@ func (t *TargetPlugin) scaleOut(
 		return err
 	}
 
+	// It may be possible to run the two Assign* commands concurrently, but whether DO supports concurrent tag/reserved IP address manipulation
+	// for a droplet is not yet tested.
+	if template.reserveIPv4Addresses {
+		if err := t.reservedAddressesPool.AssignMissingIPv4(ctx, template.createReservedAddresses, reservedIPv4AddressRequiredTag); err != nil {
+			return fmt.Errorf("failed to assign IPv4 addresses: %w", err)
+		}
+	}
+	if template.reserveIPv6Addresses {
+		if err := t.reservedAddressesPool.AssignMissingIPv6(ctx, template.createReservedAddresses, reservedIPv6AddressRequiredTag); err != nil {
+			return fmt.Errorf("failed to assign IPv6 addresses: %w", err)
+		}
+	}
+
 	log.Debug("successfully created DigitalOcean droplets")
 
 	if err := t.ensureDropletsAreStable(ctx, template, desired); err != nil {

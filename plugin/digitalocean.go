@@ -43,7 +43,7 @@ func (t *TargetPlugin) scaleOut(
 	template *dropletTemplate,
 	config map[string]string,
 ) error {
-	log := t.logger.With("action", "scale_out", "tag", template.name, "count", diff)
+	log := t.logger.With("action", "scale_out")
 
 	log.Debug("creating DigitalOcean droplets")
 

@@ -171,12 +171,15 @@ func (t *TargetPlugin) deleteDroplets(
 			return err
 		}
 
+		wg := &sync.WaitGroup{}
 		for _, d := range droplets {
 			_, ok := instanceIDs[d.Name]
 			if ok {
+				wg.Add(1)
 				go func(dropletId int) {
+					defer wg.Done()
 					log := t.logger.With("action", "delete", "droplet_id", strconv.Itoa(dropletId))
-					err := shutdownDroplet(dropletId, t.client, log)
+					err := shutdownDroplet(ctx, dropletId, t.client, log)
 					if err != nil {
 						log.Error("error deleting droplet", err)
 					}
@@ -184,6 +187,7 @@ func (t *TargetPlugin) deleteDroplets(
 				dropletsToDelete = append(dropletsToDelete, d.ID)
 			}
 		}
+		wg.Wait()
 
 		// if we deleted all droplets or if we are at the last page, break out the for loop
 		if len(dropletsToDelete) == len(instanceIDs) || resp.Links == nil ||

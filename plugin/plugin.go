@@ -36,7 +36,7 @@ const (
 
 var (
 	PluginConfig = &plugins.InternalPluginConfig{
-		Factory: func(l hclog.Logger) interface{} { return NewDODropletsPlugin(l) },
+		Factory: func(l hclog.Logger) interface{} { return NewDODropletsPlugin(context.Background(), l) },
 	}
 
 	pluginInfo = &base.PluginInfo{
@@ -50,6 +50,7 @@ var _ target.Target = (*TargetPlugin)(nil)
 
 // TargetPlugin is the DigitalOcean implementation of the target.Target interface.
 type TargetPlugin struct {
+	ctx    context.Context
 	config map[string]string
 	logger hclog.Logger
 
@@ -62,8 +63,9 @@ type TargetPlugin struct {
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
-func NewDODropletsPlugin(log hclog.Logger) *TargetPlugin {
+func NewDODropletsPlugin(ctx context.Context, log hclog.Logger) *TargetPlugin {
 	return &TargetPlugin{
+		ctx:    ctx,
 		logger: log,
 	}
 }
@@ -120,7 +122,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 		return err
 	}
 
-	ctx := context.Background()
+	ctx := t.ctx
 
 	total, _, err := t.countDroplets(ctx, template)
 	if err != nil {
@@ -166,9 +168,7 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 		return nil, err
 	}
 
-	ctx := context.Background()
-
-	total, active, err := t.countDroplets(ctx, template)
+	total, active, err := t.countDroplets(t.ctx, template)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe DigitalOcedroplets: %v", err)
 	}

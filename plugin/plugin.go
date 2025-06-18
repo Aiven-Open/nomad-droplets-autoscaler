@@ -22,7 +22,6 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	configKeyAssignReservedAddresses = "assign_reserved_addresses"
 	configKeyCreateReservedAddresses = "create_reserved_addresses"
 	configKeyReserveIPv4Addresses    = "reserve_ipv4_addresses"
 	configKeyReserveIPv6Addresses    = "reserve_ipv6_addresses"
@@ -63,6 +62,8 @@ type TargetPlugin struct {
 	// clusterUtils provides general cluster scaling utilities for querying the
 	// state of nodes pools and performing scaling tasks.
 	clusterUtils *scaleutils.ClusterScaleUtils
+
+	reservedAddressesPool *ReservedAddressesPool
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
@@ -98,6 +99,10 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 		}
 		t.client = godo.NewFromToken(tokenFromEnv)
 	}
+	t.reservedAddressesPool = CreateReservedAddressesPool(
+		t.logger,
+		WithGodoClient(t.client),
+	)
 
 	clusterUtils, err := scaleutils.NewClusterScaleUtils(
 		nomad.ConfigFromNamespacedMap(config),
@@ -157,7 +162,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 // Status satisfies the Status function on the target.Target interface.
 func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, error) {
 	// Perform our check of the Nomad node pool. If the pool is not ready, we
-	// can exit here and avoid calling the Google API as it won't affect the
+	// can exit here and avoid calling the DO API as it won't affect the
 	// outcome.
 	ready, err := t.clusterUtils.IsPoolReady(config)
 	if err != nil {
@@ -174,7 +179,7 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 
 	total, active, err := t.countDroplets(t.ctx, template)
 	if err != nil {
-		return nil, fmt.Errorf("failed to describe DigitalOcedroplets: %v", err)
+		return nil, fmt.Errorf("failed to describe DigitalOcean droplets: %v", err)
 	}
 
 	resp := &sdk.TargetStatus{
@@ -229,6 +234,42 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 	ipv6, err := strconv.ParseBool(ipv6S)
 	if err != nil {
 		return nil, fmt.Errorf("invalid value for config param %s", configKeyIPv6)
+	}
+
+	createReservedAddressesS, ok := t.getValue(config, configKeyCreateReservedAddresses)
+	if !ok {
+		createReservedAddressesS = "false"
+	}
+	createReservedAddresses, err := strconv.ParseBool(createReservedAddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyCreateReservedAddresses,
+		)
+	}
+
+	reserveIPv4AddressesS, ok := t.getValue(config, configKeyReserveIPv4Addresses)
+	if !ok {
+		reserveIPv4AddressesS = "false"
+	}
+	reserveIPv4Addresses, err := strconv.ParseBool(reserveIPv4AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv4Addresses,
+		)
+	}
+
+	reserveIPv6AddressesS, ok := t.getValue(config, configKeyReserveIPv6Addresses)
+	if !ok {
+		reserveIPv6AddressesS = "false"
+	}
+	reserveIPv6Addresses, err := strconv.ParseBool(reserveIPv6AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv6Addresses,
+		)
 	}
 
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)

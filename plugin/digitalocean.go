@@ -46,9 +46,36 @@ func (t *TargetPlugin) scaleOut(
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	wg := &sync.WaitGroup{}
+	var prereservedIPV4s []string
+	var prereservedIPV6s []string
+	var err error
+	if template.reserveIPv4Addresses {
+		prereservedIPV4s, err = t.reservedAddressesPool.PrereserveIPs(
+			ctx,
+			int(diff),
+			template.region,
+			template.createReservedAddresses,
+			5*time.Minute,
+		)
+		if err != nil {
+			return fmt.Errorf("cannot pre-reserve %v IPv4 addresses: %w", diff, err)
+		}
+	}
+	if template.reserveIPv6Addresses {
+		prereservedIPV6s, err = t.reservedAddressesPool.PrereserveIPV6s(
+			ctx,
+			int(diff),
+			template.region,
+			template.createReservedAddresses,
+			5*time.Minute,
+		)
+		if err != nil {
+			return fmt.Errorf("cannot pre-reserve %v IPv6 addresses: %w", diff, err)
+		}
+	}
 	for i := int64(0); i < diff; i++ {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
 			randomIdentifier := uuid.Must(uuid.NewRandom())
 			createRequest := &godo.DropletCreateRequest{
@@ -69,19 +96,43 @@ func (t *TargetPlugin) scaleOut(
 
 			if len(template.userData) != 0 {
 				content, err := os.ReadFile(template.userData)
-				if err != nil {
-					cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
-					return
+				if err == nil {
+					createRequest.UserData = string(content)
+				} else {
+					createRequest.UserData = template.userData
 				}
-				createRequest.UserData = string(content)
 			}
 
-			_, _, err := t.client.Droplets.Create(ctx, createRequest)
+			droplet, _, err := t.client.Droplets.Create(ctx, createRequest)
 			if err != nil {
-				cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
+				cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %w", err))
 				return
 			}
-		}()
+			if template.reserveIPv4Addresses {
+				if err := t.reservedAddressesPool.AssignIPv4(ctx, droplet, prereservedIPV4s[i]); err != nil {
+					cancel(
+						fmt.Errorf(
+							"failed to assign static IPv4 to droplet %v: %w",
+							droplet.ID,
+							err,
+						),
+					)
+					return
+				}
+			}
+			if template.reserveIPv6Addresses {
+				if err := t.reservedAddressesPool.AssignIPv6(ctx, droplet, prereservedIPV6s[i]); err != nil {
+					cancel(
+						fmt.Errorf(
+							"failed to assign static IPv6 to droplet %v: %w",
+							droplet.ID,
+							err,
+						),
+					)
+					return
+				}
+			}
+		}(int(i))
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {

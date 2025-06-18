@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/digitalocean/godo"
@@ -39,36 +40,49 @@ func (t *TargetPlugin) scaleOut(
 
 	log.Debug("creating DigitalOcean droplets")
 
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	wg := &sync.WaitGroup{}
 	for i := int64(0); i < diff; i++ {
-		randomIdentifier := uuid.Must(uuid.NewRandom())
-		createRequest := &godo.DropletCreateRequest{
-			Name:    template.name + "-" + randomIdentifier.String(),
-			Region:  template.region,
-			Size:    template.size,
-			VPCUUID: template.vpc,
-			Image: godo.DropletCreateImage{
-				ID: template.snapshotID,
-			},
-			Tags: template.tags,
-			IPv6: template.ipv6,
-		}
-
-		if len(template.sshKeys) != 0 {
-			createRequest.SSHKeys = sshKeyMap(template.sshKeys)
-		}
-
-		if len(template.userData) != 0 {
-			content, err := os.ReadFile(template.userData)
-			if err != nil {
-				return fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			randomIdentifier := uuid.Must(uuid.NewRandom())
+			createRequest := &godo.DropletCreateRequest{
+				Name:    template.name + "-" + randomIdentifier.String(),
+				Region:  template.region,
+				Size:    template.size,
+				VPCUUID: template.vpc,
+				Image: godo.DropletCreateImage{
+					ID: template.snapshotID,
+				},
+				Tags: template.tags,
+				IPv6: template.ipv6,
 			}
-			createRequest.UserData = string(content)
-		}
 
-		_, _, err := t.client.Droplets.Create(ctx, createRequest)
-		if err != nil {
-			return fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err)
-		}
+			if len(template.sshKeys) != 0 {
+				createRequest.SSHKeys = sshKeyMap(template.sshKeys)
+			}
+
+			if len(template.userData) != 0 {
+				content, err := os.ReadFile(template.userData)
+				if err != nil {
+					cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
+					return
+				}
+				createRequest.UserData = string(content)
+			}
+
+			_, _, err := t.client.Droplets.Create(ctx, createRequest)
+			if err != nil {
+				cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
+				return
+			}
+		}()
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	log.Debug("successfully created DigitalOcean droplets")

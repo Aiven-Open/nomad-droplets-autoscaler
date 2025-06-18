@@ -108,10 +108,10 @@ func (t *TargetPlugin) scaleIn(
 	}
 
 	// Grab the instanceIDs
-	instanceIDs := map[string]bool{}
+	instanceIDs := make(map[string]struct{})
 
 	for _, node := range ids {
-		instanceIDs[node.RemoteResourceID] = true
+		instanceIDs[node.RemoteResourceID] = struct{}{}
 	}
 
 	// Create a logger for this action to pre-populate useful information we
@@ -160,7 +160,7 @@ func (t *TargetPlugin) ensureDropletsAreStable(
 func (t *TargetPlugin) deleteDroplets(
 	ctx context.Context,
 	tag string,
-	instanceIDs map[string]bool,
+	instanceIDs map[string]struct{},
 ) error {
 	// create options. initially, these will be blank
 	var dropletsToDelete []int

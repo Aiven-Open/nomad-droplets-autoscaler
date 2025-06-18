@@ -3,6 +3,7 @@ module github.com/Aiven-Open/nomad-droplets-autoscaler
 go 1.24
 
 require (
+	github.com/coder/quartz v0.2.1
 	github.com/digitalocean/godo v1.151.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3

@@ -45,51 +45,151 @@ func (t *TargetPlugin) scaleOut(
 ) error {
 	log := t.logger.With("action", "scale_out", "tag", template.name, "count", diff)
 
-	log.Debug("creating DigitalOcean droplets")
+	log.Info("creating DigitalOcean droplets", "template", fmt.Sprintf("%+v", template))
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	wg := &sync.WaitGroup{}
+	var prereservedIPV4s []string
+	var prereservedIPV6s []string
+	var err error
+	if template.reserveIPv4Addresses {
+		prereservedIPV4s, err = t.reservedAddressesPool.PrereserveIPs(
+			ctx,
+			int(diff),
+			template.region,
+			template.createReservedAddresses,
+			5*time.Minute,
+		)
+		if err != nil {
+			return fmt.Errorf("cannot pre-reserve %v IPv4 addresses: %w", diff, err)
+		}
+	}
+	if template.reserveIPv6Addresses {
+		prereservedIPV6s, err = t.reservedAddressesPool.PrereserveIPV6s(
+			ctx,
+			int(diff),
+			template.region,
+			template.createReservedAddresses,
+			5*time.Minute,
+		)
+		if err != nil {
+			return fmt.Errorf("cannot pre-reserve %v IPv6 addresses: %w", diff, err)
+		}
+	}
+	errorChannel := make(chan error)
+
 	for i := int64(0); i < diff; i++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			randomIdentifier := uuid.Must(uuid.NewRandom())
-			createRequest := &godo.DropletCreateRequest{
-				Name:    template.name + "-" + randomIdentifier.String(),
-				Region:  template.region,
-				Size:    template.size,
-				VPCUUID: template.vpc,
-				Image: godo.DropletCreateImage{
-					ID: template.snapshotID,
-				},
-				Tags: template.tags,
-				IPv6: template.ipv6,
-			}
-
-			if len(template.sshKeys) != 0 {
-				createRequest.SSHKeys = sshKeyMap(template.sshKeys)
-			}
-
-			if len(template.userData) != 0 {
-				content, err := os.ReadFile(template.userData)
-				if err != nil {
-					cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
-					return
+		// create each droplet concurrently. If there is a problem,
+		// return the error via the channel.
+		go func(i int) {
+			err := (func() error {
+				defer wg.Done()
+				randomIdentifier := uuid.Must(uuid.NewRandom())
+				createRequest := &godo.DropletCreateRequest{
+					Name:    template.name + "-" + randomIdentifier.String(),
+					Region:  template.region,
+					Size:    template.size,
+					VPCUUID: template.vpc,
+					Image: godo.DropletCreateImage{
+						ID: template.snapshotID,
+					},
+					Tags: template.tags,
+					IPv6: template.ipv6,
 				}
-				createRequest.UserData = string(content)
-			}
 
-			_, _, err := t.client.Droplets.Create(ctx, createRequest)
+				if len(template.sshKeys) != 0 {
+					createRequest.SSHKeys = sshKeyMap(template.sshKeys)
+				}
+
+				if len(template.userData) != 0 {
+					content, err := os.ReadFile(template.userData)
+					if err == nil {
+						// file was found at this location, so use its content
+						createRequest.UserData = string(content)
+					} else {
+						// assume the string contains the user data
+						createRequest.UserData = template.userData
+					}
+				}
+
+				if template.secureIntroductionAppRole != "" &&
+					template.secureIntroductionFilename != "" {
+					var allowedIPv4 string
+					var allowedIPv6 string
+					if template.reserveIPv4Addresses {
+						allowedIPv4 = prereservedIPV4s[i]
+					}
+					if template.reserveIPv4Addresses {
+						allowedIPv6 = prereservedIPV6s[i]
+					}
+
+					createRequest.UserData, err = generateUserDataForSecureIntroduction(
+						ctx,
+						log.With("droplet scale-out index", i),
+						createRequest.UserData,
+						allowedIPv4,
+						allowedIPv6,
+						template,
+						t.vault,
+					)
+					if err != nil {
+						return err
+					}
+				}
+
+				droplet, _, err := t.client.Droplets().Create(ctx, createRequest)
+				if err != nil {
+					return fmt.Errorf("failed to scale out DigitalOcean droplets: %w", err)
+				}
+				log := log.With("droplet ID", droplet.ID)
+				log.Info("Created droplet")
+				if template.reserveIPv4Addresses {
+					if err := t.reservedAddressesPool.AssignIPv4(ctx, droplet.ID, prereservedIPV4s[i]); err != nil {
+						return fmt.Errorf(
+							"failed to assign static IPv4 to droplet %v: %w",
+							droplet.ID,
+							err,
+						)
+					}
+				}
+				if template.reserveIPv6Addresses {
+					if err := t.reservedAddressesPool.AssignIPv6(ctx, droplet.ID, prereservedIPV6s[i]); err != nil {
+						return fmt.Errorf(
+							"failed to assign static IPv6 to droplet %v: %w",
+							droplet.ID,
+							err,
+						)
+					}
+				}
+
+				if template.secureIntroductionAppRole != "" &&
+					template.secureIntroductionTagPrefix != "" {
+					if err := generateTagForSecureIntroduction(ctx, log, template, droplet.ID, template.ipv6, t.vault, t.client.Droplets(), t.client.Tags()); err != nil {
+						return err
+					}
+				}
+				return nil
+			})()
 			if err != nil {
-				cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
-				return
+				log.Error("failed to create droplet",
+					"scale-out index", i,
+					"error", err)
+				errorChannel <- err
 			}
-		}()
+		}(int(i))
 	}
-	wg.Wait()
-	if err := ctx.Err(); err != nil {
-		return err
+	go func() {
+		wg.Wait()
+		close(errorChannel)
+	}()
+	errorList := make([]error, 0)
+	for err := range errorChannel {
+		errorList = append(errorList, err)
+	}
+	if len(errorList) > 0 {
+		return errors.Join(errorList...)
 	}
 
 	log.Debug("successfully created DigitalOcean droplets")

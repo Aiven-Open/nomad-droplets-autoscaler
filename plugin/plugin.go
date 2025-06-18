@@ -22,16 +22,20 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	configKeyIPv6       = "ipv6"
-	configKeyToken      = "token"
-	configKeyRegion     = "region"
-	configKeySize       = "size"
-	configKeyVpcUUID    = "vpc_uuid"
-	configKeySnapshotID = "snapshot_id"
-	configKeySshKeys    = "ssh_keys"
-	configKeyUserData   = "user_data"
-	configKeyName       = "name"
-	configKeyTags       = "tags"
+	configKeyAssignReservedAddresses = "assign_reserved_addresses"
+	configKeyCreateReservedAddresses = "create_reserved_addresses"
+	configKeyReserveIPv4Addresses    = "reserve_ipv4_addresses"
+	configKeyReserveIPv6Addresses    = "reserve_ipv6_addresses"
+	configKeyIPv6                    = "ipv6"
+	configKeyName                    = "name"
+	configKeyRegion                  = "region"
+	configKeySize                    = "size"
+	configKeySnapshotID              = "snapshot_id"
+	configKeySshKeys                 = "ssh_keys"
+	configKeyTags                    = "tags"
+	configKeyToken                   = "token"
+	configKeyUserData                = "user_data"
+	configKeyVpcUUID                 = "vpc_uuid"
 )
 
 var (
@@ -244,15 +248,22 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 	}
 
 	return &dropletTemplate{
-		region:     region,
-		size:       size,
-		vpc:        vpc,
-		snapshotID: int(snapshotID),
-		name:       name,
-		sshKeys:    sshKeyFingerprints,
-		userData:   userData,
-		tags:       tags,
-		ipv6:       ipv6,
+		createReservedAddresses:     createReservedAddresses,
+		ipv6:                        ipv6,
+		name:                        name,
+		region:                      region,
+		reserveIPv4Addresses:        reserveIPv4Addresses,
+		reserveIPv6Addresses:        reserveIPv6Addresses,
+		secureIntroductionAppRole:   secureIntroductionAppRole,
+		secureIntroductionTagPrefix: secureIntroductionTagPrefix,
+		secureIntroductionFilename:  secureIntroductionFilename,
+		secretValidity:              secureIntroductionSecretValidity,
+		size:                        size,
+		snapshotID:                  int(snapshotID),
+		sshKeys:                     sshKeyFingerprints,
+		tags:                        tags,
+		userData:                    userData,
+		vpc:                         vpc,
 	}, nil
 }
 

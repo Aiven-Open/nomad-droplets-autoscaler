@@ -34,16 +34,19 @@ target "do-droplets" {
 check "hashistack-allocated-cpu" {
   # ...
   target "do-droplets" {
-    name                = "hashi-worker"
-    region              = "nyc1"
-    size                = "s-1vcpu-1gb"
-    snapshot_id         = 84589509
-    user_data           = "local/hashi-worker-user-data.sh"
-    tags                = "hashi-stack"
-    node_class          = "hashistack"
-    node_drain_deadline = "5m"
-    node_purge          = "true"
-    ipv6                = "true"
+    name                      = "hashi-worker"
+    region                    = "nyc1"
+    size                      = "s-1vcpu-1gb"
+    snapshot_id               = 84589509
+    user_data                 = "local/hashi-worker-user-data.sh"
+    tags                      = "hashi-stack"
+    node_class                = "hashistack"
+    node_drain_deadline       = "5m"
+    node_purge                = "true"
+    ipv6                      = "true"
+    create_reserved_addresses = "true"
+    reserve_ipv4_addresses    = "false"
+    reserve_ipv6_addresses    = "false"
   }
   # ...
 }
@@ -86,6 +89,12 @@ check "hashistack-allocated-cpu" {
   actions.
 
 - `ipv6` `(bool: "false")` A boolean flag to determine whether droplets should have IPv6 enabled.
+
+- `create_reserved_addresses` `(bool: "false")` A boolean flag to determine whether reserved IP addresses should be automatically created when required.
+
+- `reserve_ipv4_addresses` `(bool: "false")` A boolean flag to determine whether reserved IP addresses should be used for IPv4 interfaces
+
+- `reserve_ipv6_addresses` `(bool: "false")` A boolean flag to determine whether reserved IP addresses should be used for IPv6 interfaces
 
 - `node_selector_strategy` `(string: "least_busy")` The strategy to use when
   selecting nodes for termination. Refer to the [node selector

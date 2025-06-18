@@ -43,6 +43,7 @@ check "hashistack-allocated-cpu" {
     node_class          = "hashistack"
     node_drain_deadline = "5m"
     node_purge          = "true"
+    ipv6                = "true"
   }
   # ...
 }
@@ -83,6 +84,8 @@ check "hashistack-allocated-cpu" {
 - `node_purge` `(bool: "false")` A boolean flag to determine whether Nomad
   clients should be [purged](https://www.nomadproject.io/api-docs/nodes#purge-node) when performing scale in
   actions.
+
+- `ipv6` `(bool: "false")` A boolean flag to determine whether droplets should have IPv6 enabled.
 
 - `node_selector_strategy` `(string: "least_busy")` The strategy to use when
   selecting nodes for termination. Refer to the [node selector

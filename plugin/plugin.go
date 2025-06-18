@@ -22,6 +22,7 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
+	configKeyIPv6       = "ipv6"
 	configKeyToken      = "token"
 	configKeyRegion     = "region"
 	configKeySize       = "size"
@@ -216,6 +217,16 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		return nil, fmt.Errorf("invalid value for config param %s", configKeySnapshotID)
 	}
 
+	// enable IPv6 addresses?
+	ipv6S, ok := t.getValue(config, configKeyIPv6)
+	if !ok {
+		ipv6S = "false"
+	}
+	ipv6, err := strconv.ParseBool(ipv6S)
+	if err != nil {
+		return nil, fmt.Errorf("invalid value for config param %s", configKeyIPv6)
+	}
+
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)
 	tagsAsString, _ := t.getValue(config, configKeyTags)
 	userData, _ := t.getValue(config, configKeyUserData)
@@ -241,6 +252,7 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		sshKeys:    sshKeyFingerprints,
 		userData:   userData,
 		tags:       tags,
+		ipv6:       ipv6,
 	}, nil
 }
 

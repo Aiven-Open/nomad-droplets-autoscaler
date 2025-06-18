@@ -1,10 +1,10 @@
 package main
 
 import (
+	"github.com/Aiven-Open/nomad-droplets-autoscaler/plugin"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad-autoscaler/plugins"
-	"github.com/jsiebens/nomad-droplets-autoscaler/plugin"
 )
 
 func main() {

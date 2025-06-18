@@ -1,4 +1,4 @@
-module github.com/jsiebens/nomad-droplets-autoscaler
+module github.com/Aiven-Open/nomad-droplets-autoscaler
 
 go 1.24
 

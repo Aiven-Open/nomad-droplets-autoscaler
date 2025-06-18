@@ -22,20 +22,25 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	configKeyAssignReservedAddresses = "assign_reserved_addresses"
-	configKeyCreateReservedAddresses = "create_reserved_addresses"
-	configKeyReserveIPv4Addresses    = "reserve_ipv4_addresses"
-	configKeyReserveIPv6Addresses    = "reserve_ipv6_addresses"
-	configKeyIPv6                    = "ipv6"
-	configKeyName                    = "name"
-	configKeyRegion                  = "region"
-	configKeySize                    = "size"
-	configKeySnapshotID              = "snapshot_id"
-	configKeySshKeys                 = "ssh_keys"
-	configKeyTags                    = "tags"
-	configKeyToken                   = "token"
-	configKeyUserData                = "user_data"
-	configKeyVpcUUID                 = "vpc_uuid"
+	secureIntroductionDefaultFilename = "/run/secure-introduction"
+
+	configKeyCreateReservedAddresses          = "create_reserved_addresses"
+	configKeyReserveIPv4Addresses             = "reserve_ipv4_addresses"
+	configKeyReserveIPv6Addresses             = "reserve_ipv6_addresses"
+	configKeySecureIntroductionAppRole        = "secure_introduction_approle"
+	configKeySecureIntroductionTagPrefix      = "secure_introduction_tag_prefix"
+	configKeySecureIntroductionFilename       = "secure_introduction_filename"
+	configKeySecureIntroductionSecretValidity = "secure_introduction_secret_validity"
+	configKeyIPv6                             = "ipv6"
+	configKeyName                             = "name"
+	configKeyRegion                           = "region"
+	configKeySize                             = "size"
+	configKeySnapshotID                       = "snapshot_id"
+	configKeySshKeys                          = "ssh_keys"
+	configKeyTags                             = "tags"
+	configKeyToken                            = "token"
+	configKeyUserData                         = "user_data"
+	configKeyVpcUUID                          = "vpc_uuid"
 )
 
 var (
@@ -63,6 +68,8 @@ type TargetPlugin struct {
 	// clusterUtils provides general cluster scaling utilities for querying the
 	// state of nodes pools and performing scaling tasks.
 	clusterUtils *scaleutils.ClusterScaleUtils
+
+	reservedAddressesPool *ReservedAddressesPool
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
@@ -98,6 +105,10 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 		}
 		t.client = godo.NewFromToken(tokenFromEnv)
 	}
+	t.reservedAddressesPool = CreateReservedAddressesPool(
+		t.logger,
+		WithDigitalOceanWrapper(t.client),
+	)
 
 	clusterUtils, err := scaleutils.NewClusterScaleUtils(
 		nomad.ConfigFromNamespacedMap(config),
@@ -157,7 +168,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 // Status satisfies the Status function on the target.Target interface.
 func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, error) {
 	// Perform our check of the Nomad node pool. If the pool is not ready, we
-	// can exit here and avoid calling the Google API as it won't affect the
+	// can exit here and avoid calling the DO API as it won't affect the
 	// outcome.
 	ready, err := t.clusterUtils.IsPoolReady(config)
 	if err != nil {
@@ -174,7 +185,7 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 
 	total, active, err := t.countDroplets(t.ctx, template)
 	if err != nil {
-		return nil, fmt.Errorf("failed to describe DigitalOcedroplets: %v", err)
+		return nil, fmt.Errorf("failed to describe DigitalOcean droplets: %v", err)
 	}
 
 	resp := &sdk.TargetStatus{
@@ -229,6 +240,76 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 	ipv6, err := strconv.ParseBool(ipv6S)
 	if err != nil {
 		return nil, fmt.Errorf("invalid value for config param %s", configKeyIPv6)
+	}
+
+	createReservedAddressesS, ok := t.getValue(config, configKeyCreateReservedAddresses)
+	if !ok {
+		createReservedAddressesS = "false"
+	}
+	createReservedAddresses, err := strconv.ParseBool(createReservedAddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyCreateReservedAddresses,
+		)
+	}
+
+	reserveIPv4AddressesS, ok := t.getValue(config, configKeyReserveIPv4Addresses)
+	if !ok {
+		reserveIPv4AddressesS = "false"
+	}
+	reserveIPv4Addresses, err := strconv.ParseBool(reserveIPv4AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv4Addresses,
+		)
+	}
+
+	reserveIPv6AddressesS, ok := t.getValue(config, configKeyReserveIPv6Addresses)
+	if !ok {
+		reserveIPv6AddressesS = "false"
+	}
+	reserveIPv6Addresses, err := strconv.ParseBool(reserveIPv6AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv6Addresses,
+		)
+	}
+
+	secureIntroductionAppRole, _ := t.getValue(config, configKeySecureIntroductionAppRole)
+
+	secureIntroductionTagPrefix, _ := t.getValue(config, configKeySecureIntroductionTagPrefix)
+
+	if secureIntroductionAppRole != "" && secureIntroductionTagPrefix == "" &&
+		!reserveIPv4Addresses &&
+		!reserveIPv6Addresses {
+		return nil, errors.New(
+			"a secure introduction approle has been specified but neither reserved IP addresses nor a tag prefix are configured",
+		)
+	}
+
+	secureIntroductionFilename, ok := t.getValue(config, configKeySecureIntroductionFilename)
+	if !ok {
+		secureIntroductionFilename = secureIntroductionDefaultFilename
+	}
+
+	secureIntroductionSecretValidityS, ok := t.getValue(
+		config,
+		configKeySecureIntroductionSecretValidity,
+	)
+	if !ok {
+		secureIntroductionSecretValidityS = "5m"
+	}
+
+	secureIntroductionSecretValidity, err := time.ParseDuration(secureIntroductionSecretValidityS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a duration: %w",
+			configKeySecureIntroductionSecretValidity,
+			err,
+		)
 	}
 
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)

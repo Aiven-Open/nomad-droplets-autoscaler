@@ -4,12 +4,12 @@ go 1.24
 
 require (
 	github.com/digitalocean/godo v1.151.0
+	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/nomad-autoscaler v0.4.6
 	github.com/hashicorp/nomad/api v0.0.0-20250611195651-7519df8d06e6
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/stretchr/testify v1.10.0
-	github.com/thanhpk/randstr v1.0.6
 )
 
 require (

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/digitalocean/godo"
+	"github.com/google/uuid"
 	"github.com/hashicorp/nomad/api"
-	"github.com/thanhpk/randstr"
 )
 
 const (
@@ -40,8 +40,9 @@ func (t *TargetPlugin) scaleOut(
 	log.Debug("creating DigitalOcean droplets")
 
 	for i := int64(0); i < diff; i++ {
+		randomIdentifier := uuid.Must(uuid.NewRandom())
 		createRequest := &godo.DropletCreateRequest{
-			Name:    template.name + "-" + randstr.String(6),
+			Name:    template.name + "-" + randomIdentifier.String(),
 			Region:  template.region,
 			Size:    template.size,
 			VPCUUID: template.vpc,

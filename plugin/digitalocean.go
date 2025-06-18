@@ -19,15 +19,18 @@ const (
 )
 
 type dropletTemplate struct {
-	region     string
-	size       string
-	vpc        string
-	snapshotID int
-	name       string
-	sshKeys    []string
-	tags       []string
-	userData   string
-	ipv6       bool
+	createReservedAddresses bool
+	ipv6                    bool
+	name                    string
+	region                  string
+	reserveIPv4Addresses    bool
+	reserveIPv6Addresses    bool
+	size                    string
+	snapshotID              int
+	sshKeys                 []string
+	tags                    []string
+	userData                string
+	vpc                     string
 }
 
 func (t *TargetPlugin) scaleOut(

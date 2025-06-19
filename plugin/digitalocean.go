@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/digitalocean/godo"
@@ -39,36 +40,49 @@ func (t *TargetPlugin) scaleOut(
 
 	log.Debug("creating DigitalOcean droplets")
 
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	wg := &sync.WaitGroup{}
 	for i := int64(0); i < diff; i++ {
-		randomIdentifier := uuid.Must(uuid.NewRandom())
-		createRequest := &godo.DropletCreateRequest{
-			Name:    template.name + "-" + randomIdentifier.String(),
-			Region:  template.region,
-			Size:    template.size,
-			VPCUUID: template.vpc,
-			Image: godo.DropletCreateImage{
-				ID: template.snapshotID,
-			},
-			Tags: template.tags,
-			IPv6: template.ipv6,
-		}
-
-		if len(template.sshKeys) != 0 {
-			createRequest.SSHKeys = sshKeyMap(template.sshKeys)
-		}
-
-		if len(template.userData) != 0 {
-			content, err := os.ReadFile(template.userData)
-			if err != nil {
-				return fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			randomIdentifier := uuid.Must(uuid.NewRandom())
+			createRequest := &godo.DropletCreateRequest{
+				Name:    template.name + "-" + randomIdentifier.String(),
+				Region:  template.region,
+				Size:    template.size,
+				VPCUUID: template.vpc,
+				Image: godo.DropletCreateImage{
+					ID: template.snapshotID,
+				},
+				Tags: template.tags,
+				IPv6: template.ipv6,
 			}
-			createRequest.UserData = string(content)
-		}
 
-		_, _, err := t.client.Droplets.Create(ctx, createRequest)
-		if err != nil {
-			return fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err)
-		}
+			if len(template.sshKeys) != 0 {
+				createRequest.SSHKeys = sshKeyMap(template.sshKeys)
+			}
+
+			if len(template.userData) != 0 {
+				content, err := os.ReadFile(template.userData)
+				if err != nil {
+					cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
+					return
+				}
+				createRequest.UserData = string(content)
+			}
+
+			_, _, err := t.client.Droplets.Create(ctx, createRequest)
+			if err != nil {
+				cancel(fmt.Errorf("failed to scale out DigitalOcean droplets: %v", err))
+				return
+			}
+		}()
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	log.Debug("successfully created DigitalOcean droplets")
@@ -94,10 +108,10 @@ func (t *TargetPlugin) scaleIn(
 	}
 
 	// Grab the instanceIDs
-	instanceIDs := map[string]bool{}
+	instanceIDs := make(map[string]struct{})
 
 	for _, node := range ids {
-		instanceIDs[node.RemoteResourceID] = true
+		instanceIDs[node.RemoteResourceID] = struct{}{}
 	}
 
 	// Create a logger for this action to pre-populate useful information we
@@ -146,7 +160,7 @@ func (t *TargetPlugin) ensureDropletsAreStable(
 func (t *TargetPlugin) deleteDroplets(
 	ctx context.Context,
 	tag string,
-	instanceIDs map[string]bool,
+	instanceIDs map[string]struct{},
 ) error {
 	// create options. initially, these will be blank
 	var dropletsToDelete []int
@@ -157,12 +171,15 @@ func (t *TargetPlugin) deleteDroplets(
 			return err
 		}
 
+		wg := &sync.WaitGroup{}
 		for _, d := range droplets {
 			_, ok := instanceIDs[d.Name]
 			if ok {
+				wg.Add(1)
 				go func(dropletId int) {
+					defer wg.Done()
 					log := t.logger.With("action", "delete", "droplet_id", strconv.Itoa(dropletId))
-					err := shutdownDroplet(dropletId, t.client, log)
+					err := shutdownDroplet(ctx, dropletId, t.client, log)
 					if err != nil {
 						log.Error("error deleting droplet", err)
 					}
@@ -170,6 +187,7 @@ func (t *TargetPlugin) deleteDroplets(
 				dropletsToDelete = append(dropletsToDelete, d.ID)
 			}
 		}
+		wg.Wait()
 
 		// if we deleted all droplets or if we are at the last page, break out the for loop
 		if len(dropletsToDelete) == len(instanceIDs) || resp.Links == nil ||

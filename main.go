@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/Aiven-Open/nomad-droplets-autoscaler/plugin"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
@@ -13,5 +15,5 @@ func main() {
 }
 
 func factory(log hclog.Logger) interface{} {
-	return plugin.NewDODropletsPlugin(log)
+	return plugin.NewDODropletsPlugin(context.Background(), log)
 }

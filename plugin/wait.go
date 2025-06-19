@@ -10,51 +10,39 @@ import (
 )
 
 func waitForDropletState(
+	ctx context.Context,
 	desiredState string, dropletId int,
 	client *godo.Client,
 	log hclog.Logger,
-	timeout time.Duration) error {
-	done := make(chan struct{})
-	defer close(done)
+) error {
+	attempts := 0
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	log.Debug(
+		fmt.Sprintf(
+			"Waiting for droplet to become %s",
+			desiredState,
+		),
+	)
+	for {
+		attempts += 1
 
-	result := make(chan error, 1)
-	go func() {
-		attempts := 0
-		for {
-			attempts += 1
-
-			log.Debug(fmt.Sprintf("Checking droplet status... (attempt: %d)", attempts))
-			droplet, _, err := client.Droplets.Get(context.TODO(), dropletId)
-			if err != nil {
-				result <- err
-				return
-			}
-
-			if droplet.Status == desiredState {
-				result <- nil
-				return
-			}
-
-			// Wait 3 seconds in between
-			time.Sleep(3 * time.Second)
-
-			// Verify we shouldn't exit
-			select {
-			case <-done:
-				// We finished, so just exit the goroutine
-				return
-			default:
-				// Keep going
-			}
+		log.Debug(fmt.Sprintf("Checking droplet status... (attempt: %d)", attempts))
+		droplet, _, err := client.Droplets.Get(ctx, dropletId)
+		if err != nil {
+			return err
 		}
-	}()
 
-	log.Debug(fmt.Sprintf("Waiting for up to %d seconds for droplet to become %s", timeout/time.Second, desiredState))
-	select {
-	case err := <-result:
-		return err
-	case <-time.After(timeout):
-		err := fmt.Errorf("timeout while waiting to for droplet to become '%s'", desiredState)
-		return err
+		if droplet.Status == desiredState {
+			return nil
+		}
+
+		// Wait 3 seconds
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			break
+		}
 	}
 }

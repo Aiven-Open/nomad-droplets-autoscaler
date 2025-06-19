@@ -22,21 +22,29 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	configKeyIPv6       = "ipv6"
-	configKeyToken      = "token"
-	configKeyRegion     = "region"
-	configKeySize       = "size"
-	configKeyVpcUUID    = "vpc_uuid"
-	configKeySnapshotID = "snapshot_id"
-	configKeySshKeys    = "ssh_keys"
-	configKeyUserData   = "user_data"
-	configKeyName       = "name"
-	configKeyTags       = "tags"
+	// reservedAddressTag is applied to droplets which should be allocated
+	// reserved (static) IP addresses, both for IPv4 and IPv6
+	reservedIPv4AddressRequiredTag = "nomad-autoscaler-reserved-ipv4-address"
+	reservedIPv6AddressRequiredTag = "nomad-autoscaler-reserved-ipv6-address"
+
+	configKeyCreateReservedAddresses = "create_reserved_addresses"
+	configKeyReserveIPv4Addresses    = "reserve_ipv4_addresses"
+	configKeyReserveIPv6Addresses    = "reserve_ipv6_addresses"
+	configKeyIPv6                    = "ipv6"
+	configKeyName                    = "name"
+	configKeyRegion                  = "region"
+	configKeySize                    = "size"
+	configKeySnapshotID              = "snapshot_id"
+	configKeySshKeys                 = "ssh_keys"
+	configKeyTags                    = "tags"
+	configKeyToken                   = "token"
+	configKeyUserData                = "user_data"
+	configKeyVpcUUID                 = "vpc_uuid"
 )
 
 var (
 	PluginConfig = &plugins.InternalPluginConfig{
-		Factory: func(l hclog.Logger) interface{} { return NewDODropletsPlugin(l) },
+		Factory: func(l hclog.Logger) interface{} { return NewDODropletsPlugin(context.Background(), l) },
 	}
 
 	pluginInfo = &base.PluginInfo{
@@ -50,6 +58,7 @@ var _ target.Target = (*TargetPlugin)(nil)
 
 // TargetPlugin is the DigitalOcean implementation of the target.Target interface.
 type TargetPlugin struct {
+	ctx    context.Context
 	config map[string]string
 	logger hclog.Logger
 
@@ -58,12 +67,15 @@ type TargetPlugin struct {
 	// clusterUtils provides general cluster scaling utilities for querying the
 	// state of nodes pools and performing scaling tasks.
 	clusterUtils *scaleutils.ClusterScaleUtils
+
+	reservedAddressesPool *ReservedAddressesPool
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
-func NewDODropletsPlugin(log hclog.Logger) *TargetPlugin {
+func NewDODropletsPlugin(ctx context.Context, log hclog.Logger) *TargetPlugin {
 	return &TargetPlugin{
+		ctx:    ctx,
 		logger: log,
 	}
 }
@@ -92,6 +104,10 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 		}
 		t.client = godo.NewFromToken(tokenFromEnv)
 	}
+	t.reservedAddressesPool = CreateReservedAddressesPool(
+		t.logger,
+		WithGodoClient(t.client),
+	)
 
 	clusterUtils, err := scaleutils.NewClusterScaleUtils(
 		nomad.ConfigFromNamespacedMap(config),
@@ -120,7 +136,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 		return err
 	}
 
-	ctx := context.Background()
+	ctx := t.ctx
 
 	total, _, err := t.countDroplets(ctx, template)
 	if err != nil {
@@ -166,9 +182,7 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 		return nil, err
 	}
 
-	ctx := context.Background()
-
-	total, active, err := t.countDroplets(ctx, template)
+	total, active, err := t.countDroplets(t.ctx, template)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe DigitalOcedroplets: %v", err)
 	}
@@ -227,11 +241,53 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		return nil, fmt.Errorf("invalid value for config param %s", configKeyIPv6)
 	}
 
+	createReservedAddressesS, ok := t.getValue(config, configKeyCreateReservedAddresses)
+	if !ok {
+		createReservedAddressesS = "false"
+	}
+	createReservedAddresses, err := strconv.ParseBool(createReservedAddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyCreateReservedAddresses,
+		)
+	}
+
+	reserveIPv4AddressesS, ok := t.getValue(config, configKeyReserveIPv4Addresses)
+	if !ok {
+		reserveIPv4AddressesS = "false"
+	}
+	reserveIPv4Addresses, err := strconv.ParseBool(reserveIPv4AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv4Addresses,
+		)
+	}
+
+	reserveIPv6AddressesS, ok := t.getValue(config, configKeyReserveIPv6Addresses)
+	if !ok {
+		reserveIPv6AddressesS = "false"
+	}
+	reserveIPv6Addresses, err := strconv.ParseBool(reserveIPv6AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv6Addresses,
+		)
+	}
+
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)
 	tagsAsString, _ := t.getValue(config, configKeyTags)
 	userData, _ := t.getValue(config, configKeyUserData)
 
 	tags := []string{name}
+	if reserveIPv4Addresses {
+		tags = append(tags, reservedIPv4AddressRequiredTag)
+	}
+	if reserveIPv6Addresses {
+		tags = append(tags, reservedIPv6AddressRequiredTag)
+	}
 	if len(tagsAsString) != 0 {
 		tags = append(tags, strings.Split(tagsAsString, ",")...)
 	}
@@ -244,15 +300,18 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 	}
 
 	return &dropletTemplate{
-		region:     region,
-		size:       size,
-		vpc:        vpc,
-		snapshotID: int(snapshotID),
-		name:       name,
-		sshKeys:    sshKeyFingerprints,
-		userData:   userData,
-		tags:       tags,
-		ipv6:       ipv6,
+		createReservedAddresses: createReservedAddresses,
+		reserveIPv4Addresses:    reserveIPv4Addresses,
+		reserveIPv6Addresses:    reserveIPv6Addresses,
+		ipv6:                    ipv6,
+		name:                    name,
+		region:                  region,
+		size:                    size,
+		snapshotID:              int(snapshotID),
+		sshKeys:                 sshKeyFingerprints,
+		tags:                    tags,
+		userData:                userData,
+		vpc:                     vpc,
 	}, nil
 }
 

@@ -260,7 +260,7 @@ func (t *TargetPlugin) deleteDroplets(
 	var dropletsToDelete []int
 	opt := &godo.ListOptions{}
 	for {
-		droplets, resp, err := t.client.Droplets.ListByTag(ctx, tag, opt)
+		droplets, resp, err := t.client.Droplets().ListByTag(ctx, tag, opt)
 		if err != nil {
 			return err
 		}
@@ -273,7 +273,13 @@ func (t *TargetPlugin) deleteDroplets(
 				go func(dropletId int) {
 					defer wg.Done()
 					log := t.logger.With("action", "delete", "droplet_id", strconv.Itoa(dropletId))
-					err := shutdownDroplet(ctx, dropletId, t.client, log)
+					err := shutdownDroplet(
+						ctx,
+						dropletId,
+						t.client.Droplets(),
+						t.client.DropletActions(),
+						log,
+					)
 					if err != nil {
 						log.Error("error deleting droplet", err)
 					}
@@ -310,7 +316,7 @@ func (t *TargetPlugin) countDroplets(
 
 	opt := &godo.ListOptions{}
 	for {
-		droplets, resp, err := t.client.Droplets.ListByTag(ctx, template.name, opt)
+		droplets, resp, err := t.client.Droplets().ListByTag(ctx, template.name, opt)
 		if err != nil {
 			return 0, 0, err
 		}

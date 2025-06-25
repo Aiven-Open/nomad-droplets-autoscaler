@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/digitalocean/godo"
 	"github.com/google/uuid"
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/api"
 )
 
@@ -382,4 +384,125 @@ func sshKeyMap(input []string) []godo.DropletCreateSSHKey {
 	}
 
 	return result
+}
+
+func generateUserDataForSecureIntroduction(
+	ctx context.Context,
+	userData string,
+	allowedIPv4, allowedIPv6 string,
+	template *dropletTemplate,
+	vault VaultProxy,
+) (string, error) {
+	if allowedIPv4 != "" || allowedIPv6 != "" {
+		// because at least one reserved IP address is being used,
+		// it is possible to generate the wrapped secret before
+		// the droplet is created, allowing it to be included in
+		// the user-data
+		wrappedSecretId, err := vault.GenerateSecretId(
+			ctx,
+			template.secureIntroductionAppRole,
+			allowedIPv4, allowedIPv6,
+			template.secretValidity, template.secretValidity,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate wrapped secure introduction: %w", err)
+		}
+		shellScript := fmt.Sprintf(
+			`#!/bin/sh
+echo "%v" > "%v"
+`,
+			wrappedSecretId,
+			template.secureIntroductionFilename,
+		)
+		result, err := PrependShellScriptToUserData(
+			userData,
+			shellScript,
+		)
+		if err == nil {
+			return result, nil
+		} else {
+			return "", fmt.Errorf(
+				"failed to insert wrapped secure introduction into user-data: %w",
+				err)
+		}
+	} else {
+		if prefix := template.secureIntroductionTagPrefix; prefix != "" {
+			/*
+				It is unlikely that the user-data script will be executed before
+				the droplet's metadata has been updated with the tags containing
+				the request-wrapped SecretID - but to be sure, allow a minute of
+				retries before failing.
+			*/
+			shellScript := fmt.Sprintf(strings.ReplaceAll(
+				`#!/bin/sh
+
+TAGS_TEMPFILE=@mktemp -s@
+for I in @seq 1 20@ ; do
+    curl -o "$TAGS_TEMPFILE" http://169.254.169.254/metadata/v1/tags && break
+    sleep 3
+done
+if [ -f "$TAGS_TEMPFILE" ] ; then
+    sed -n 's#%v##p' < "$TAGS_TEMPFILE" > "%v"
+fi
+rm "$TAGS_TEMPFILE"
+`, "@", "`"),
+				prefix,
+				template.secureIntroductionFilename,
+			)
+			result, err := PrependShellScriptToUserData(
+				userData,
+				shellScript,
+			)
+			if err == nil {
+				return result, nil
+			} else {
+				return "", fmt.Errorf(
+					"failed to insert SecretID retrieval script into user-data: %w",
+					err)
+			}
+		}
+	}
+	// no modifications
+	return userData, nil
+}
+
+func generateTagForSecureIntroduction(
+	ctx context.Context,
+	logger hclog.Logger,
+	template *dropletTemplate,
+	droplet *godo.Droplet,
+	vault VaultProxy,
+	tags Tags,
+) error {
+	if network := droplet.Networks; network != nil && len(network.V4) > 0 {
+		var ipv6 string
+		if len(network.V6) > 0 {
+			ipv6 = network.V6[0].IPAddress
+		}
+		wrappedSecretId, err := vault.GenerateSecretId(
+			ctx,
+			template.secureIntroductionAppRole,
+			network.V4[0].IPAddress, ipv6,
+			template.secretValidity, template.secretValidity,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"failed to generate wrapped secure introduction for droplet %v: %w",
+				droplet.ID,
+				err)
+		}
+		if err := RetryOnTransientError(ctx, logger, func(ctx context.Context, cancel context.CancelCauseFunc) error {
+			_, err := tags.TagResources(ctx, fmt.Sprintf("%v%v", template.secureIntroductionTagPrefix, wrappedSecretId), &godo.TagResourcesRequest{Resources: []godo.Resource{{ID: fmt.Sprintf("%v", droplet.ID), Type: "droplet"}}})
+			return err
+		}); err != nil {
+			return fmt.Errorf(
+				"failed to tag droplet %v with wrapped secure introduction: %w",
+				droplet.ID,
+				err)
+		}
+		return nil
+	}
+	return errors.New(
+		"cannot generate a request-wrapped tag as no network addresses are known (yet)",
+	)
 }

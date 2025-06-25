@@ -78,3 +78,45 @@ func retry(
 		errors.Join(cerr, lastErr),
 	)
 }
+
+// RetryOnTransientError will retry the provided callable
+// if the error is one which is likely to indicate a transient error,
+// which might just require some time to resolve.
+// godo already handles rate-limiting, but HTTP 422s have been observed
+// when trying to do things like conccurently assign multiple reserved IP addresses.
+// If an unrecognise error is returned, this will exit as normal, immediately.
+func RetryOnTransientError(
+	ctx context.Context,
+	logger hclog.Logger,
+	f func(ctx context.Context, cancel context.CancelCauseFunc) error,
+) error {
+	// TODO: add jitter
+	return retry(ctx, logger, 10*time.Second, 30,
+		func(ctx context.Context, cancel context.CancelCauseFunc) error {
+			err := f(ctx, cancel)
+			if err == nil {
+				// success
+				return nil
+			}
+
+			respErr := &godo.ErrorResponse{}
+			logger.Info("inspecting error to see if it's a DO HTTP response erro")
+			if errors.As(err, &respErr) && respErr.Response != nil {
+				logger.Info(
+					"response is a DO HTTP error",
+					"response",
+					fmt.Sprintf("%+v", respErr.Response),
+					"status code",
+					fmt.Sprintf("%v", respErr.Response.StatusCode),
+				)
+				if respErr.Response.StatusCode == 422 {
+					// try again
+					return err
+				}
+			}
+
+			// do not retry
+			cancel(err)
+			return err
+		})
+}

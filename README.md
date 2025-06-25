@@ -34,19 +34,22 @@ target "do-droplets" {
 check "hashistack-allocated-cpu" {
   # ...
   target "do-droplets" {
-    name                      = "hashi-worker"
-    region                    = "nyc1"
-    size                      = "s-1vcpu-1gb"
-    snapshot_id               = 84589509
-    user_data                 = "local/hashi-worker-user-data.sh"
-    tags                      = "hashi-stack"
-    node_class                = "hashistack"
-    node_drain_deadline       = "5m"
-    node_purge                = "true"
-    ipv6                      = "true"
-    create_reserved_addresses = "true"
-    reserve_ipv4_addresses    = "false"
-    reserve_ipv6_addresses    = "false"
+    create_reserved_addresses            = "true"
+    ipv6                                 = "true"
+    name                                 = "hashi-worker"
+    node_class                           = "hashistack"
+    node_drain_deadline                  = "5m"
+    node_purge                           = "true"
+    region                               = "nyc1"
+    reserve_ipv4_addresses               = "false"
+    reserve_ipv6_addresses               = "false"
+    secure_introduction_approle          = "autoscaler-droplet"
+    secure_introduction_secret_validity  = "5m"
+    secure_introduction_tag_prefix       = "secure-introduction-"
+    size                                 = "s-1vcpu-1gb"
+    snapshot_id                          = 84589509
+    tags                                 = "hashi-stack"
+    user_data                            = "local/hashi-worker-user-data.sh"
   }
   # ...
 }
@@ -96,6 +99,34 @@ check "hashistack-allocated-cpu" {
 
 - `reserve_ipv6_addresses` `(bool: "false")` A boolean flag to determine whether reserved IP addresses should be used for IPv6 interfaces
 
+- `secure_introduction_approle` `(string: "")` A vault AppRole. If defined, a secret will be generated for this role for each new droplet.
+  If IPv4 and/or IPv6 reserved addresses are being used, a wrapped SecretID will be included in `user_data`.
+
+- `secure_introduction_tag_prefix` `(string: "")` If defined (and `secure_introduction_approle` is also defined), a request-wrapped SecretID will be stored in a tag prefixed with this string
+
+- `secure_introduction_secret_validity` `(duration: 5m)` The duration a SecretID (and its request-wrapper) is valid for, from the time it is generated.
+
+- `secure_introduction_filename` `(string: "/run/secure-introduction")` The filename to store the unwrapped SecretID in
+
 - `node_selector_strategy` `(string: "least_busy")` The strategy to use when
   selecting nodes for termination. Refer to the [node selector
   strategy](https://www.nomadproject.io/docs/autoscaling/internals/node-selector-strategy) documentation for more information.
+
+### Secure Introduction
+
+While it is possible to provide secrets via a droplet's user-data, this is not always considered sufficiently secure. Additionally, this
+means every droplet is allocated the same set of secrets, making it more difficult to track the lineage of use of a secret.
+
+To improve the situation, it's possible to use Hashicorp Vault to generate a "personalised" SecretID for a given approle. Each new droplet
+receives its own SecretID, allowing better repudiation and tracking options. Going one step further, this SecretID is "request-wrapped"
+before being provided to each droplet. This wrapper can be unwrapped by the Vault service only one time. Additionally, unwrapping can only
+be requested from IP address(es) associated with the droplet, and only within a few minutes of its being issued.
+
+If a `secure_introduction_approle` is provided, this feature is enabled. It is assumed that the autoscaler has both `VAULT_ADDR` and `VAULT_TOKEN`
+in its environment, as the vault client will rely on these to find and authenticate with the Vault service.
+
+If reserved IPv4/IPv6 addresses are being assigned to droplets, it is possible to anticipate the exact address(es) which will be assigned, and the
+request-wrapping can be performed prior to droplet creation, allowing the wrapped SecretID to be inserted directly into the droplet's user data.
+Otherwise, IP address(es) of a droplet are not known until after it is created, so the request-wrapped SecretID is unable to be included directly. Instead, it is appended to a supplied prefix and included as a tag after the droplet is created.
+
+Whether or not reserved IP addresses are used, the modified user-data will ensure that the request-wrapped SecretID is written to a (configurable) location on the droplet. It is assumed that subsequent cloud-init stages will install the vault client, perform the unwrapping, and retrieve whatever credentials are required.

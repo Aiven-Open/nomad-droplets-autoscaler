@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/digitalocean/godo"
 	"github.com/hashicorp/go-hclog"
 )
 
 func waitForDropletState(
 	ctx context.Context,
 	desiredState string, dropletId int,
-	client *godo.Client,
+	droplets Droplets,
 	log hclog.Logger,
 ) error {
 	attempts := 0
@@ -28,7 +27,7 @@ func waitForDropletState(
 		attempts += 1
 
 		log.Debug(fmt.Sprintf("Checking droplet status... (attempt: %d)", attempts))
-		droplet, _, err := client.Droplets.Get(ctx, dropletId)
+		droplet, _, err := droplets.Get(ctx, dropletId)
 		if err != nil {
 			return err
 		}

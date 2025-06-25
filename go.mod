@@ -9,6 +9,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/nomad-autoscaler v0.4.6
 	github.com/hashicorp/nomad/api v0.0.0-20250611195651-7519df8d06e6
+	github.com/hashicorp/vault-client-go v0.4.3
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/stretchr/testify v1.10.0
 )
@@ -30,6 +31,7 @@ require (
 	github.com/hashicorp/go-plugin v1.6.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
+	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/hcl/v2 v2.23.0 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -40,6 +42,7 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/oklog/run v1.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/zclconf/go-cty v1.13.0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.32.0 // indirect

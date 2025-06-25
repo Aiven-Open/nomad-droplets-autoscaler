@@ -65,7 +65,7 @@ type TargetPlugin struct {
 	config map[string]string
 	logger hclog.Logger
 
-	client *godo.Client
+	client DigitalOceanWrapper
 	vault  VaultProxy
 
 	// clusterUtils provides general cluster scaling utilities for querying the
@@ -101,13 +101,13 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read token: %v", err)
 		}
-		t.client = godo.NewFromToken(contents)
+		t.client = &GodoWrapper{Client: godo.NewFromToken(contents)}
 	} else {
 		tokenFromEnv := getEnv("DIGITALOCEAN_TOKEN", "DIGITALOCEAN_ACCESS_TOKEN")
 		if len(tokenFromEnv) == 0 {
 			return fmt.Errorf("unable to find DigitalOcean token")
 		}
-		t.client = godo.NewFromToken(tokenFromEnv)
+		t.client = &GodoWrapper{Client: godo.NewFromToken(tokenFromEnv)}
 	}
 	t.reservedAddressesPool = CreateReservedAddressesPool(
 		t.logger,

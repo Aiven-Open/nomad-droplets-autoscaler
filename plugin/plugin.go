@@ -45,7 +45,9 @@ const (
 
 var (
 	PluginConfig = &plugins.InternalPluginConfig{
-		Factory: func(l hclog.Logger) interface{} { return NewDODropletsPlugin(context.Background(), l) },
+		Factory: func(l hclog.Logger) interface{} {
+			return NewDODropletsPlugin(context.Background(), l, Must(NewVault()))
+		},
 	}
 
 	pluginInfo = &base.PluginInfo{
@@ -64,6 +66,7 @@ type TargetPlugin struct {
 	logger hclog.Logger
 
 	client *godo.Client
+	vault  VaultProxy
 
 	// clusterUtils provides general cluster scaling utilities for querying the
 	// state of nodes pools and performing scaling tasks.
@@ -74,10 +77,11 @@ type TargetPlugin struct {
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
-func NewDODropletsPlugin(ctx context.Context, log hclog.Logger) *TargetPlugin {
+func NewDODropletsPlugin(ctx context.Context, log hclog.Logger, vault VaultProxy) *TargetPlugin {
 	return &TargetPlugin{
 		ctx:    ctx,
 		logger: log,
+		vault:  vault,
 	}
 }
 

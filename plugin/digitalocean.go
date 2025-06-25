@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -252,16 +253,24 @@ func (t *TargetPlugin) ensureDropletsAreStable(
 	template *dropletTemplate,
 	desired int64,
 ) error {
-	f := func(ctx context.Context) (bool, error) {
-		_, active, err := t.countDroplets(ctx, template)
-		if desired == active || err != nil {
-			return true, err
-		} else {
-			return false, fmt.Errorf("waiting for droplets to become stable")
-		}
-	}
-
-	return retry(ctx, defaultRetryInterval, defaultRetryLimit, f)
+	return retry(
+		ctx,
+		t.logger,
+		defaultRetryInterval,
+		defaultRetryLimit,
+		func(ctx context.Context, cancel context.CancelCauseFunc) error {
+			_, active, err := t.countDroplets(ctx, template)
+			if desired == active {
+				return nil
+			}
+			if err != nil {
+				cancel(err)
+				return err
+			} else {
+				return errors.New("waiting for droplets to become stable")
+			}
+		},
+	)
 }
 
 func (t *TargetPlugin) deleteDroplets(

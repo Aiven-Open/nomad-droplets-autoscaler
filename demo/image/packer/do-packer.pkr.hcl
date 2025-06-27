@@ -2,7 +2,7 @@ variable "name" {
 }
 
 variable "source_image" {
-  default = "ubuntu-20-04-x64"
+  default = "ubuntu-24-04-x64"
 }
 
 variable "ssh_username" {
@@ -20,7 +20,7 @@ source "digitalocean" "hashistack" {
   image         = "${var.source_image}"
   ssh_username  = "${var.ssh_username}"
   region        = "${var.region}"
-  size          = "512mb"
+  size          = "s-1vcpu-1gb"
   api_token     = "${var.token}"
 }
 

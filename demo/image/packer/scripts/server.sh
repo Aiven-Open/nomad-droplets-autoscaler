@@ -16,7 +16,7 @@ telemetry {
 EOF
 
 hashi-up consul install \
-  --version 1.9.5 \
+  --version 1.21.2 \
   --local \
   --server \
   --bootstrap-expect ${NR_OF_SERVERS} \
@@ -26,7 +26,7 @@ hashi-up consul install \
   --retry-join "provider=digitalocean region=${REGION} tag_name=${TAG_NAME} api_token=${API_TOKEN}"
 
 hashi-up nomad install \
-  --version 1.1.0 \
+  --version 1.10.2 \
   --local \
   --server \
   --bootstrap-expect ${NR_OF_SERVERS} \

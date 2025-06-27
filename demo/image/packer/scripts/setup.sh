@@ -13,17 +13,17 @@ apt-get update
 apt-get install -y dnsmasq curl unzip docker.io
 
 mkdir -p /opt/cni/bin
-curl -sSL https://github.com/containernetworking/plugins/releases/download/v0.9.1/cni-plugins-linux-amd64-v0.9.1.tgz | tar -xvz -C /opt/cni/bin
+curl -sSL https://github.com/containernetworking/plugins/releases/download/v1.7.1/cni-plugins-linux-amd64-v1.7.1.tgz | tar -xvz -C /opt/cni/bin
 
 curl -sL get.hashi-up.dev | sh
 
 hashi-up consul install \
-  --version 1.9.5 \
+  --version 1.21.2 \
   --local \
   --skip-enable
 
 hashi-up nomad install \
-  --version 1.1.0 \
+  --version 1.10.2 \
   --local \
   --skip-enable
 

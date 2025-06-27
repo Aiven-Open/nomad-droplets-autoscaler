@@ -1,3 +1,5 @@
 .idea
 dist
 nomad-droplets-autoscaler
+# Added by goreleaser init:
+dist/

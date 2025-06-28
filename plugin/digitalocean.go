@@ -346,7 +346,7 @@ func (t *TargetPlugin) countDroplets(
 		}
 
 		total = total + int64(len(droplets))
-		ready = ready + count(droplets, isReady)
+		ready = ready + countIf(droplets, isReady)
 
 		if resp.Links == nil || resp.Links.IsLastPage() {
 			break
@@ -361,16 +361,6 @@ func (t *TargetPlugin) countDroplets(
 	}
 
 	return total, ready, nil
-}
-
-func count(droplets []godo.Droplet, predicate func(godo.Droplet) bool) int64 {
-	var count int64 = 0
-	for _, d := range droplets {
-		if predicate(d) {
-			count += 1
-		}
-	}
-	return count
 }
 
 func isReady(droplet godo.Droplet) bool {

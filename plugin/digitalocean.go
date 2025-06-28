@@ -336,7 +336,7 @@ func (t *TargetPlugin) countDroplets(
 		}
 
 		total = total + int64(len(droplets))
-		ready = ready + count(droplets, isReady)
+		ready = ready + countIf(droplets, isReady)
 
 		if resp.Links == nil || resp.Links.IsLastPage() {
 			break
@@ -353,10 +353,10 @@ func (t *TargetPlugin) countDroplets(
 	return total, ready, nil
 }
 
-func count(droplets []godo.Droplet, predicate func(godo.Droplet) bool) int64 {
+func countIf[T any](items []T, predicate func(T) bool) int64 {
 	var count int64 = 0
-	for _, d := range droplets {
-		if predicate(d) {
+	for _, item := range items {
+		if predicate(item) {
 			count += 1
 		}
 	}

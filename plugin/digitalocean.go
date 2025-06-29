@@ -88,7 +88,7 @@ func (t *TargetPlugin) scaleOut(
 	log.Debug("successfully created DigitalOcean droplets")
 
 	if err := t.ensureDropletsAreStable(ctx, template, desired); err != nil {
-		return fmt.Errorf("failed to confirm scale out DigitalOcean droplets: %v", err)
+		return fmt.Errorf("failed to confirm scale out DigitalOcean droplets: %w", err)
 	}
 
 	log.Debug("scale out DigitalOcean droplets confirmed")
@@ -104,7 +104,7 @@ func (t *TargetPlugin) scaleIn(
 ) error {
 	ids, err := t.clusterUtils.RunPreScaleInTasks(ctx, config, int(diff))
 	if err != nil {
-		return fmt.Errorf("failed to perform pre-scale Nomad scale in tasks: %v", err)
+		return fmt.Errorf("failed to perform pre-scale Nomad scale in tasks: %w", err)
 	}
 
 	// Grab the instanceIDs
@@ -121,20 +121,20 @@ func (t *TargetPlugin) scaleIn(
 	log.Debug("deleting DigitalOcean droplets")
 
 	if err := t.deleteDroplets(ctx, template.name, instanceIDs); err != nil {
-		return fmt.Errorf("failed to delete instances: %v", err)
+		return fmt.Errorf("failed to delete instances: %w", err)
 	}
 
 	log.Debug("successfully started deletion process")
 
 	if err := t.ensureDropletsAreStable(ctx, template, desired); err != nil {
-		return fmt.Errorf("failed to confirm scale in DigitalOcean droplets: %v", err)
+		return fmt.Errorf("failed to confirm scale in DigitalOcean droplets: %w", err)
 	}
 
 	log.Debug("scale in DigitalOcean droplets confirmed")
 
 	// Run any post scale in tasks that are desired.
 	if err := t.clusterUtils.RunPostScaleInTasks(ctx, config, ids); err != nil {
-		return fmt.Errorf("failed to perform post-scale Nomad scale in tasks: %v", err)
+		return fmt.Errorf("failed to perform post-scale Nomad scale in tasks: %w", err)
 	}
 
 	return nil

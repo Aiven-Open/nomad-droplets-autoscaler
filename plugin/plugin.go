@@ -84,7 +84,7 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 	if ok {
 		contents, err := pathOrContents(token)
 		if err != nil {
-			return fmt.Errorf("failed to read token: %v", err)
+			return fmt.Errorf("failed to read token: %w", err)
 		}
 		t.client = godo.NewFromToken(contents)
 	} else {
@@ -126,7 +126,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 
 	total, _, err := t.countDroplets(ctx, template)
 	if err != nil {
-		return fmt.Errorf("failed to describe DigitalOcedroplets: %v", err)
+		return fmt.Errorf("failed to describe DigitalOcedroplets: %w", err)
 	}
 
 	diff, direction := t.calculateDirection(total, action.Count)
@@ -137,7 +137,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 	case "out":
 		err = t.scaleOut(ctx, action.Count, diff, template, config)
 	default:
-		t.logger.Info("scaling not required", "tag", template.name,
+		t.logger.Debug("scaling not required", "tag", template.name,
 			"current_count", total, "strategy_count", action.Count)
 		return nil
 	}
@@ -145,7 +145,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 	// If we received an error while scaling, format this with an outer message
 	// so its nice for the operators and then return any error to the caller.
 	if err != nil {
-		err = fmt.Errorf("failed to perform scaling action: %v", err)
+		err = fmt.Errorf("failed to perform scaling action: %w", err)
 	}
 	return err
 }
@@ -157,7 +157,7 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 	// outcome.
 	ready, err := t.clusterUtils.IsPoolReady(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run Nomad node readiness check: %v", err)
+		return nil, fmt.Errorf("failed to run Nomad node readiness check: %w", err)
 	}
 	if !ready {
 		return &sdk.TargetStatus{Ready: ready}, nil

@@ -19,7 +19,7 @@ func shutdownDroplet(
 	log.Debug("Gracefully shutting down droplet...")
 	_, _, err := client.DropletActions.PowerOff(ctx, dropletId)
 	if err != nil {
-		return fmt.Errorf("error shutting down droplet: %s", err)
+		return fmt.Errorf("error shutting down droplet: %w", err)
 	}
 
 	ctxWaitForDropletState, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -32,7 +32,7 @@ func shutdownDroplet(
 	log.Debug("Deleting Droplet...")
 	_, err = client.Droplets.Delete(ctx, dropletId)
 	if err != nil {
-		return fmt.Errorf("error deleting droplet: %s", err)
+		return fmt.Errorf("error deleting droplet: %w", err)
 	}
 
 	return nil

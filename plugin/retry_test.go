@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,30 +20,37 @@ func Test_retry(t *testing.T) {
 		name           string
 	}{
 		{
-			inputContext:  context.Background(),
+			inputContext:  t.Context(),
 			inputInterval: 1 * time.Millisecond,
 			inputRetry:    1,
-			inputFunc: func(ctx context.Context) (stop bool, err error) {
-				return true, nil
+			inputFunc: func(ctx context.Context, cancel context.CancelCauseFunc) error {
+				return nil
 			},
 			expectedOutput: nil,
 			name:           "successful function first time",
 		},
 		{
-			inputContext:  context.Background(),
-			inputInterval: 1 * time.Millisecond,
+			inputContext:  t.Context(),
+			inputInterval: 1 * time.Microsecond,
 			inputRetry:    1,
-			inputFunc: func(ctx context.Context) (stop bool, err error) {
-				return false, errors.New("error")
+			inputFunc: func(ctx context.Context, cancel context.CancelCauseFunc) error {
+				return errors.New("error")
 			},
 			expectedOutput: errors.New("reached retry limit"),
 			name:           "function never successful and reaches retry limit",
 		},
 	}
 
+	logger := hclog.Default()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actualOutput := retry(tc.inputContext, tc.inputInterval, tc.inputRetry, tc.inputFunc)
+			actualOutput := retry(
+				tc.inputContext,
+				logger,
+				tc.inputInterval,
+				tc.inputRetry,
+				tc.inputFunc,
+			)
 			assert.Equal(t, tc.expectedOutput, actualOutput, tc.name)
 		})
 	}

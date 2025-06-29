@@ -1,5 +1,5 @@
 .idea
 dist
 nomad-droplets-autoscaler
-# Added by goreleaser init:
+terraform.tfstate
 dist/

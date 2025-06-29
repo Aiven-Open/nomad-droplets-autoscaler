@@ -11,12 +11,12 @@ job "autoscaler" {
       driver = "docker"
 
       artifact {
-        source      = "https://github.com/jsiebens/nomad-droplets-autoscaler/releases/download/v0.2.0/do-droplets_linux_amd64.zip"
+        source      = "https://github.com/Aiven-Open/nomad-droplets-autoscaler/releases/download/v0.0.13/nomad-droplets-autoscaler_Linux_x86_64.tar.gz"
         destination = "local/plugins/"
       }
 
       config {
-        image   = "hashicorp/nomad-autoscaler:0.3.3"
+        image   = "hashicorp/nomad-autoscaler:0.4"
         command = "nomad-autoscaler"
 
         args = [
@@ -97,6 +97,11 @@ scaling "batch" {
       datacenter             = "batch_workers"
       node_drain_deadline    = "1h"
       node_selector_strategy = "empty_ignore_system"
+
+      reserve_ipv4_addresses = "true"
+      reserve_ipv6_addresses = "true"
+      ipv6 = "true"
+      create_reserved_addresses = "true"
     }
   }
 }

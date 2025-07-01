@@ -247,7 +247,32 @@ func (t *TargetPlugin) scaleIn(
 		return fmt.Errorf("failed to perform post-scale Nomad scale in tasks: %w", err)
 	}
 
+	if tagPrefix := template.secureIntroductionTagPrefix; tagPrefix != "" {
+		go cleanUpUnusedTags(ctx, log, t.client, template.secureIntroductionTagPrefix)
+	}
+
 	return nil
+}
+
+// cleanUpUnusedTags will delete unused tags starting with the provided prefix.
+func cleanUpUnusedTags(ctx context.Context, logger hclog.Logger, client DigitalOceanWrapper, tagPrefix string) {
+	for tag, err := range Paginate(ctx, client.Tags().List, godo.ListOptions{}) {
+		if err != nil {
+			logger.Error("cannot retrieve tags", "error", err)
+			return
+		}
+		if !strings.HasPrefix(tag.Name, tagPrefix) {
+			continue
+		}
+		if res := tag.Resources; res != nil && res.Count > 0 {
+			logger.Info("not cleaning up tag as it's still in use", "tag name", tag.Name)
+			continue
+		}
+		logger.Info("cleaning up tag as it's unused", "tag name", tag.Name)
+		if _, err := client.Tags().Delete(ctx, tag.Name); err != nil {
+			logger.Error("cannot delete the tag", "tag name", tag.Name, "error", err)
+		}
+	}
 }
 
 func (t *TargetPlugin) ensureDropletsAreStable(

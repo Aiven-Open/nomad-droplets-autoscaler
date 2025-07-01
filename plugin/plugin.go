@@ -26,23 +26,24 @@ const (
 
 	secureIntroductionDefaultFilename = "/run/secure-introduction"
 
-	configKeyCreateReservedAddresses          = "create_reserved_addresses"
-	configKeyReserveIPv4Addresses             = "reserve_ipv4_addresses"
-	configKeyReserveIPv6Addresses             = "reserve_ipv6_addresses"
-	configKeySecureIntroductionAppRole        = "secure_introduction_approle"
-	configKeySecureIntroductionTagPrefix      = "secure_introduction_tag_prefix"
-	configKeySecureIntroductionFilename       = "secure_introduction_filename"
-	configKeySecureIntroductionSecretValidity = "secure_introduction_secret_validity"
-	configKeyIPv6                             = "ipv6"
-	configKeyName                             = "name"
-	configKeyRegion                           = "region"
-	configKeySize                             = "size"
-	configKeySnapshotID                       = "snapshot_id"
-	configKeySshKeys                          = "ssh_keys"
-	configKeyTags                             = "tags"
-	configKeyToken                            = "token"
-	configKeyUserData                         = "user_data"
-	configKeyVpcUUID                          = "vpc_uuid"
+	configKeyCreateReservedAddresses                 = "create_reserved_addresses"
+	configKeyReserveIPv4Addresses                    = "reserve_ipv4_addresses"
+	configKeyReserveIPv6Addresses                    = "reserve_ipv6_addresses"
+	configKeySecureIntroductionAppRole               = "secure_introduction_approle"
+	configKeySecureIntroductionTagPrefix             = "secure_introduction_tag_prefix"
+	configKeySecureIntroductionFilename              = "secure_introduction_filename"
+	configKeySecureIntroductionSecretValidity        = "secure_introduction_secret_validity"
+	configKeySecureIntroductionWrappedSecretValidity = "secure_introduction_wrapped_secret_validity"
+	configKeyIPv6                                    = "ipv6"
+	configKeyName                                    = "name"
+	configKeyRegion                                  = "region"
+	configKeySize                                    = "size"
+	configKeySnapshotID                              = "snapshot_id"
+	configKeySshKeys                                 = "ssh_keys"
+	configKeyTags                                    = "tags"
+	configKeyToken                                   = "token"
+	configKeyUserData                                = "user_data"
+	configKeyVpcUUID                                 = "vpc_uuid"
 )
 
 var (
@@ -301,6 +302,22 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		secureIntroductionFilename = secureIntroductionDefaultFilename
 	}
 
+	secureIntroductionWrappedSecretValidityS, ok := t.getValue(
+		config,
+		configKeySecureIntroductionWrappedSecretValidity,
+	)
+	if !ok {
+		secureIntroductionWrappedSecretValidityS = "5m"
+	}
+
+	secureIntroductionWrappedSecretValidity, err := time.ParseDuration(secureIntroductionWrappedSecretValidityS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a duration: %w",
+			configKeySecureIntroductionWrappedSecretValidity,
+			err,
+		)
+	}
 	secureIntroductionSecretValidityS, ok := t.getValue(
 		config,
 		configKeySecureIntroductionSecretValidity,
@@ -341,16 +358,17 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		region:                      region,
 		reserveIPv4Addresses:        reserveIPv4Addresses,
 		reserveIPv6Addresses:        reserveIPv6Addresses,
-		secureIntroductionAppRole:   secureIntroductionAppRole,
-		secureIntroductionTagPrefix: secureIntroductionTagPrefix,
-		secureIntroductionFilename:  secureIntroductionFilename,
 		secretValidity:              secureIntroductionSecretValidity,
+		secureIntroductionAppRole:   secureIntroductionAppRole,
+		secureIntroductionFilename:  secureIntroductionFilename,
+		secureIntroductionTagPrefix: secureIntroductionTagPrefix,
 		size:                        size,
 		snapshotID:                  int(snapshotID),
 		sshKeys:                     sshKeyFingerprints,
 		tags:                        tags,
 		userData:                    userData,
 		vpc:                         vpc,
+		wrappedSecretValidity:       secureIntroductionWrappedSecretValidity,
 	}, nil
 }
 

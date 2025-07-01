@@ -32,6 +32,7 @@ type dropletTemplate struct {
 	secureIntroductionAppRole   string
 	secureIntroductionTagPrefix string
 	secretValidity              time.Duration
+	wrappedSecretValidity       time.Duration
 	secureIntroductionFilename  string
 	size                        string
 	snapshotID                  int
@@ -453,7 +454,7 @@ func generateUserDataForSecureIntroduction(
 			ctx,
 			template.secureIntroductionAppRole,
 			allowedIPv4, allowedIPv6,
-			template.secretValidity, template.secretValidity,
+			template.secretValidity, template.wrappedSecretValidity,
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate wrapped secure introduction: %w", err)
@@ -566,7 +567,7 @@ func generateTagForSecureIntroduction(
 		ctx,
 		template.secureIntroductionAppRole,
 		ipv4, ipv6,
-		template.secretValidity, template.secretValidity,
+		template.secretValidity, template.wrappedSecretValidity,
 	)
 	if err != nil {
 		return fmt.Errorf(

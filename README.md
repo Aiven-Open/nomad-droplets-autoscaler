@@ -34,22 +34,23 @@ target "do-droplets" {
 check "hashistack-allocated-cpu" {
   # ...
   target "do-droplets" {
-    create_reserved_addresses            = "true"
-    ipv6                                 = "true"
-    name                                 = "hashi-worker"
-    node_class                           = "hashistack"
-    node_drain_deadline                  = "5m"
-    node_purge                           = "true"
-    region                               = "nyc1"
-    reserve_ipv4_addresses               = "false"
-    reserve_ipv6_addresses               = "false"
-    secure_introduction_approle          = "autoscaler-droplet"
-    secure_introduction_secret_validity  = "5m"
-    secure_introduction_tag_prefix       = "secure-introduction-"
-    size                                 = "s-1vcpu-1gb"
-    snapshot_id                          = 84589509
-    tags                                 = "hashi-stack"
-    user_data                            = "local/hashi-worker-user-data.sh"
+    create_reserved_addresses                    = "true"
+    ipv6                                         = "true"
+    name                                         = "hashi-worker"
+    node_class                                   = "hashistack"
+    node_drain_deadline                          = "5m"
+    node_purge                                   = "true"
+    region                                       = "nyc1"
+    reserve_ipv4_addresses                       = "false"
+    reserve_ipv6_addresses                       = "false"
+    secure_introduction_approle                  = "autoscaler-droplet"
+    secure_introduction_secret_validity          = "5m"
+    secure_introduction_wrapped_secret_validity  = "5m"
+    secure_introduction_tag_prefix               = "secure-introduction-"
+    size                                         = "s-1vcpu-1gb"
+    snapshot_id                                  = 84589509
+    tags                                         = "hashi-stack"
+    user_data                                    = "local/hashi-worker-user-data.sh"
   }
   # ...
 }
@@ -104,7 +105,9 @@ check "hashistack-allocated-cpu" {
 
 - `secure_introduction_tag_prefix` `(string: "")` If defined (and `secure_introduction_approle` is also defined), a request-wrapped SecretID will be stored in a tag prefixed with this string
 
-- `secure_introduction_secret_validity` `(duration: 5m)` The duration a SecretID (and its request-wrapper) is valid for, from the time it is generated.
+- `secure_introduction_secret_validity` `(duration: 5m)` The duration a SecretID is valid for, from the time it is generated.
+
+- `secure_introduction_wrapped_secret_validity` `(duration: 5m)` The duration the request wrapper for the SecretID is valid for, from the time it is generated.
 
 - `secure_introduction_filename` `(string: "/run/secure-introduction")` The filename to store the unwrapped SecretID in
 

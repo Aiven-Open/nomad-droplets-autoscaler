@@ -2,10 +2,12 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/digitalocean/godo"
 	"github.com/hashicorp/go-hclog"
@@ -22,21 +24,33 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	configKeyIPv6       = "ipv6"
-	configKeyToken      = "token"
-	configKeyRegion     = "region"
-	configKeySize       = "size"
-	configKeyVpcUUID    = "vpc_uuid"
-	configKeySnapshotID = "snapshot_id"
-	configKeySshKeys    = "ssh_keys"
-	configKeyUserData   = "user_data"
-	configKeyName       = "name"
-	configKeyTags       = "tags"
+	secureIntroductionDefaultFilename = "/run/secure-introduction"
+
+	configKeyCreateReservedAddresses                 = "create_reserved_addresses"
+	configKeyReserveIPv4Addresses                    = "reserve_ipv4_addresses"
+	configKeyReserveIPv6Addresses                    = "reserve_ipv6_addresses"
+	configKeySecureIntroductionAppRole               = "secure_introduction_approle"
+	configKeySecureIntroductionTagPrefix             = "secure_introduction_tag_prefix"
+	configKeySecureIntroductionFilename              = "secure_introduction_filename"
+	configKeySecureIntroductionSecretValidity        = "secure_introduction_secret_validity"
+	configKeySecureIntroductionWrappedSecretValidity = "secure_introduction_wrapped_secret_validity"
+	configKeyIPv6                                    = "ipv6"
+	configKeyName                                    = "name"
+	configKeyRegion                                  = "region"
+	configKeySize                                    = "size"
+	configKeySnapshotID                              = "snapshot_id"
+	configKeySshKeys                                 = "ssh_keys"
+	configKeyTags                                    = "tags"
+	configKeyToken                                   = "token"
+	configKeyUserData                                = "user_data"
+	configKeyVpcUUID                                 = "vpc_uuid"
 )
 
 var (
 	PluginConfig = &plugins.InternalPluginConfig{
-		Factory: func(l hclog.Logger) interface{} { return NewDODropletsPlugin(context.Background(), l) },
+		Factory: func(l hclog.Logger) interface{} {
+			return NewDODropletsPlugin(context.Background(), l, Must(NewVault()))
+		},
 	}
 
 	pluginInfo = &base.PluginInfo{
@@ -54,19 +68,23 @@ type TargetPlugin struct {
 	config map[string]string
 	logger hclog.Logger
 
-	client *godo.Client
+	client DigitalOceanWrapper
+	vault  VaultProxy
 
 	// clusterUtils provides general cluster scaling utilities for querying the
 	// state of nodes pools and performing scaling tasks.
 	clusterUtils *scaleutils.ClusterScaleUtils
+
+	reservedAddressesPool *ReservedAddressesPool
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
-func NewDODropletsPlugin(ctx context.Context, log hclog.Logger) *TargetPlugin {
+func NewDODropletsPlugin(ctx context.Context, log hclog.Logger, vault VaultProxy) *TargetPlugin {
 	return &TargetPlugin{
 		ctx:    ctx,
 		logger: log,
+		vault:  vault,
 	}
 }
 
@@ -84,16 +102,20 @@ func (t *TargetPlugin) SetConfig(config map[string]string) error {
 	if ok {
 		contents, err := pathOrContents(token)
 		if err != nil {
-			return fmt.Errorf("failed to read token: %v", err)
+			return fmt.Errorf("failed to read token: %w", err)
 		}
-		t.client = godo.NewFromToken(contents)
+		t.client = &GodoWrapper{Client: godo.NewFromToken(contents)}
 	} else {
 		tokenFromEnv := getEnv("DIGITALOCEAN_TOKEN", "DIGITALOCEAN_ACCESS_TOKEN")
 		if len(tokenFromEnv) == 0 {
 			return fmt.Errorf("unable to find DigitalOcean token")
 		}
-		t.client = godo.NewFromToken(tokenFromEnv)
+		t.client = &GodoWrapper{Client: godo.NewFromToken(tokenFromEnv)}
 	}
+	t.reservedAddressesPool = CreateReservedAddressesPool(
+		t.logger,
+		WithDigitalOceanWrapper(t.client),
+	)
 
 	clusterUtils, err := scaleutils.NewClusterScaleUtils(
 		nomad.ConfigFromNamespacedMap(config),
@@ -126,7 +148,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 
 	total, _, err := t.countDroplets(ctx, template)
 	if err != nil {
-		return fmt.Errorf("failed to describe DigitalOcedroplets: %v", err)
+		return fmt.Errorf("failed to describe DigitalOcedroplets: %w", err)
 	}
 
 	diff, direction := t.calculateDirection(total, action.Count)
@@ -137,7 +159,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 	case "out":
 		err = t.scaleOut(ctx, action.Count, diff, template, config)
 	default:
-		t.logger.Info("scaling not required", "tag", template.name,
+		t.logger.Debug("scaling not required", "tag", template.name,
 			"current_count", total, "strategy_count", action.Count)
 		return nil
 	}
@@ -145,7 +167,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 	// If we received an error while scaling, format this with an outer message
 	// so its nice for the operators and then return any error to the caller.
 	if err != nil {
-		err = fmt.Errorf("failed to perform scaling action: %v", err)
+		err = fmt.Errorf("failed to perform scaling action: %w", err)
 	}
 	return err
 }
@@ -153,11 +175,11 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 // Status satisfies the Status function on the target.Target interface.
 func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, error) {
 	// Perform our check of the Nomad node pool. If the pool is not ready, we
-	// can exit here and avoid calling the Google API as it won't affect the
+	// can exit here and avoid calling the DO API as it won't affect the
 	// outcome.
 	ready, err := t.clusterUtils.IsPoolReady(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run Nomad node readiness check: %v", err)
+		return nil, fmt.Errorf("failed to run Nomad node readiness check: %w", err)
 	}
 	if !ready {
 		return &sdk.TargetStatus{Ready: ready}, nil
@@ -170,7 +192,7 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 
 	total, active, err := t.countDroplets(t.ctx, template)
 	if err != nil {
-		return nil, fmt.Errorf("failed to describe DigitalOcedroplets: %v", err)
+		return nil, fmt.Errorf("failed to describe DigitalOcean droplets: %w", err)
 	}
 
 	resp := &sdk.TargetStatus{
@@ -227,6 +249,92 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		return nil, fmt.Errorf("invalid value for config param %s", configKeyIPv6)
 	}
 
+	createReservedAddressesS, ok := t.getValue(config, configKeyCreateReservedAddresses)
+	if !ok {
+		createReservedAddressesS = "false"
+	}
+	createReservedAddresses, err := strconv.ParseBool(createReservedAddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyCreateReservedAddresses,
+		)
+	}
+
+	reserveIPv4AddressesS, ok := t.getValue(config, configKeyReserveIPv4Addresses)
+	if !ok {
+		reserveIPv4AddressesS = "false"
+	}
+	reserveIPv4Addresses, err := strconv.ParseBool(reserveIPv4AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv4Addresses,
+		)
+	}
+
+	reserveIPv6AddressesS, ok := t.getValue(config, configKeyReserveIPv6Addresses)
+	if !ok {
+		reserveIPv6AddressesS = "false"
+	}
+	reserveIPv6Addresses, err := strconv.ParseBool(reserveIPv6AddressesS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a boolean",
+			configKeyReserveIPv6Addresses,
+		)
+	}
+
+	secureIntroductionAppRole, _ := t.getValue(config, configKeySecureIntroductionAppRole)
+
+	secureIntroductionTagPrefix, _ := t.getValue(config, configKeySecureIntroductionTagPrefix)
+
+	if secureIntroductionAppRole != "" && secureIntroductionTagPrefix == "" &&
+		!reserveIPv4Addresses &&
+		!reserveIPv6Addresses {
+		return nil, errors.New(
+			"a secure introduction approle has been specified but neither reserved IP addresses nor a tag prefix are configured",
+		)
+	}
+
+	secureIntroductionFilename, ok := t.getValue(config, configKeySecureIntroductionFilename)
+	if !ok {
+		secureIntroductionFilename = secureIntroductionDefaultFilename
+	}
+
+	secureIntroductionWrappedSecretValidityS, ok := t.getValue(
+		config,
+		configKeySecureIntroductionWrappedSecretValidity,
+	)
+	if !ok {
+		secureIntroductionWrappedSecretValidityS = "5m"
+	}
+
+	secureIntroductionWrappedSecretValidity, err := time.ParseDuration(secureIntroductionWrappedSecretValidityS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a duration: %w",
+			configKeySecureIntroductionWrappedSecretValidity,
+			err,
+		)
+	}
+	secureIntroductionSecretValidityS, ok := t.getValue(
+		config,
+		configKeySecureIntroductionSecretValidity,
+	)
+	if !ok {
+		secureIntroductionSecretValidityS = "5m"
+	}
+
+	secureIntroductionSecretValidity, err := time.ParseDuration(secureIntroductionSecretValidityS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a duration: %w",
+			configKeySecureIntroductionSecretValidity,
+			err,
+		)
+	}
+
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)
 	tagsAsString, _ := t.getValue(config, configKeyTags)
 	userData, _ := t.getValue(config, configKeyUserData)
@@ -244,15 +352,23 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 	}
 
 	return &dropletTemplate{
-		region:     region,
-		size:       size,
-		vpc:        vpc,
-		snapshotID: int(snapshotID),
-		name:       name,
-		sshKeys:    sshKeyFingerprints,
-		userData:   userData,
-		tags:       tags,
-		ipv6:       ipv6,
+		createReservedAddresses:     createReservedAddresses,
+		ipv6:                        ipv6,
+		name:                        name,
+		region:                      region,
+		reserveIPv4Addresses:        reserveIPv4Addresses,
+		reserveIPv6Addresses:        reserveIPv6Addresses,
+		secretValidity:              secureIntroductionSecretValidity,
+		secureIntroductionAppRole:   secureIntroductionAppRole,
+		secureIntroductionFilename:  secureIntroductionFilename,
+		secureIntroductionTagPrefix: secureIntroductionTagPrefix,
+		size:                        size,
+		snapshotID:                  int(snapshotID),
+		sshKeys:                     sshKeyFingerprints,
+		tags:                        tags,
+		userData:                    userData,
+		vpc:                         vpc,
+		wrappedSecretValidity:       secureIntroductionWrappedSecretValidity,
 	}, nil
 }
 

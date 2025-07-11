@@ -8,6 +8,7 @@ require (
 	github.com/goccy/go-yaml v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/nomad-autoscaler v0.4.7
 	github.com/hashicorp/nomad/api v0.0.0-20250721135329-36b4aa79df33
 	github.com/hashicorp/vault-client-go v0.4.3

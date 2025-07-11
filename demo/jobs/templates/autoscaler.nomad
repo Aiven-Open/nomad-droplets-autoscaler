@@ -11,7 +11,7 @@ job "autoscaler" {
       driver = "docker"
 
       artifact {
-        source      = "https://github.com/Aiven-Open/nomad-droplets-autoscaler/releases/download/v0.0.25/nomad-droplets-autoscaler_Linux_x86_64.tar.gz"
+        source      = "https://github.com/Aiven-Open/nomad-droplets-autoscaler/releases/download/v0.1.9/nomad-droplets-autoscaler_Linux_x86_64.tar.gz"
         destination = "local/plugins/"
       }
 
@@ -87,21 +87,20 @@ scaling "batch" {
     }
 
     target "do-droplets" {
-      name = "hashi-batch"
-      region = "${region}"
-      size = "s-1vcpu-1gb"
-      snapshot_id = ${snapshot_id}
-      user_data = "local/batch-startup.sh"
-      tags = "hashi-stack"
-
-      datacenter             = "batch_workers"
-      node_drain_deadline    = "1h"
-      node_selector_strategy = "empty_ignore_system"
-
-      reserve_ipv4_addresses = "false"
-      reserve_ipv6_addresses = "false"
-      ipv6 = "true"
       create_reserved_addresses = "false"
+      datacenter                = "batch_workers"
+      init_grace_period         = "10m"
+      ipv6                      = "true"
+      name                      = "hashi-batch"
+      node_drain_deadline       = "1h"
+      node_selector_strategy    = "empty_ignore_system"
+      region                    = "${region}"
+      reserve_ipv4_addresses    = "false"
+      reserve_ipv6_addresses    = "false"
+      size                      = "s-1vcpu-1gb"
+      snapshot_id               = ${snapshot_id}
+      tags                      = "hashi-stack"
+      user_data                 = "local/batch-startup.sh"
     }
   }
 }
@@ -156,6 +155,8 @@ EOF
 server:
   http_listen_port: {{ env "NOMAD_PORT_promtail" }}
   grpc_listen_port: 0
+
+log_level: "DEBUG"
 
 positions:
   filename: /tmp/positions.yaml

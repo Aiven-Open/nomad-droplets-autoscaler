@@ -11,6 +11,8 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/golang-lru/v2/expirable"
+
 	"github.com/hashicorp/nomad-autoscaler/plugins"
 	"github.com/hashicorp/nomad-autoscaler/plugins/base"
 	"github.com/hashicorp/nomad-autoscaler/plugins/target"
@@ -24,6 +26,13 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
+	// the LRU reduces the number of times the nomad server is queried to get detailed
+	// information on each nomad client (which is required to identify the associated
+	// droplet ID). In rare cases a droplet could become orphaned despite having registered
+	// as a nomad client earlier. In such cases it won't be detected until the LRU evicts it.
+	DropletMappingLRUSize   = 1024
+	DropletMappingLRUExpiry = 6 * time.Hour
+
 	configKeyCreateReservedAddresses                 = "create_reserved_addresses"
 	configKeyReserveIPv4Addresses                    = "reserve_ipv4_addresses"
 	configKeyReserveIPv6Addresses                    = "reserve_ipv6_addresses"
@@ -31,6 +40,7 @@ const (
 	configKeySecureIntroductionTagPrefix             = "secure_introduction_tag_prefix"
 	configKeySecureIntroductionFilename              = "secure_introduction_filename"
 	configKeySecureIntroductionSecretValidity        = "secure_introduction_secret_validity"
+	configKeyInitGracePeriod                         = "init_grace_period"
 	configKeySecureIntroductionWrappedSecretValidity = "secure_introduction_wrapped_secret_validity"
 	configKeyIPv6                                    = "ipv6"
 	configKeyName                                    = "name"
@@ -74,15 +84,19 @@ type TargetPlugin struct {
 	clusterUtils *scaleutils.ClusterScaleUtils
 
 	reservedAddressesPool *ReservedAddressesPool
+
+	// maps nomad client IDs to droplet IDs
+	dropletMapping *expirable.LRU[string, int]
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
 func NewDODropletsPlugin(ctx context.Context, log hclog.Logger, vault VaultProxy) *TargetPlugin {
 	return &TargetPlugin{
-		ctx:    ctx,
-		logger: log,
-		vault:  vault,
+		ctx:            ctx,
+		logger:         log,
+		vault:          vault,
+		dropletMapping: expirable.NewLRU[string, int](DropletMappingLRUSize, nil, DropletMappingLRUExpiry),
 	}
 }
 
@@ -153,6 +167,8 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 
 	switch direction {
 	case "in":
+		// describe which nomad clients are known, to allow
+		// failed droplets to be the first to be scaled in
 		err = t.scaleIn(ctx, action.Count, diff, template, config)
 	case "out":
 		err = t.scaleOut(ctx, action.Count, diff, template, config)
@@ -341,6 +357,25 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		)
 	}
 
+	initGracePeriodS, ok := t.getValue(
+		config,
+		configKeyInitGracePeriod,
+	)
+	if !ok {
+		// if no grace period was provided, disable this feature by
+		// setting a zero duration
+		initGracePeriodS = "0m"
+	}
+
+	initGracePeriod, err := time.ParseDuration(initGracePeriodS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a duration: %w",
+			configKeyInitGracePeriod,
+			err,
+		)
+	}
+
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)
 	tagsAsString, _ := t.getValue(config, configKeyTags)
 	userData, _ := t.getValue(config, configKeyUserData)
@@ -359,6 +394,7 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 
 	return &dropletTemplate{
 		createReservedAddresses:     createReservedAddresses,
+		initGracePeriod:             initGracePeriod,
 		ipv6:                        ipv6,
 		name:                        name,
 		region:                      region,

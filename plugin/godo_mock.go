@@ -196,6 +196,7 @@ func (m *mockDroplets) Create(
 		Tags:     req.Tags,
 		Status:   "active",
 		Networks: networks,
+		Created:  time.Now().Format(time.RFC3339),
 	}
 	m.mock.dropletUserData[droplet.ID] = req.UserData
 	m.mock.droplets[droplet.ID] = droplet

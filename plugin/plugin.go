@@ -11,18 +11,28 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/golang-lru/v2/expirable"
+
 	"github.com/hashicorp/nomad-autoscaler/plugins"
 	"github.com/hashicorp/nomad-autoscaler/plugins/base"
 	"github.com/hashicorp/nomad-autoscaler/plugins/target"
 	"github.com/hashicorp/nomad-autoscaler/sdk"
 	"github.com/hashicorp/nomad-autoscaler/sdk/helper/nomad"
 	"github.com/hashicorp/nomad-autoscaler/sdk/helper/scaleutils"
+	"github.com/hashicorp/nomad/api"
 	"github.com/mitchellh/go-homedir"
 )
 
 const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
+
+	// the LRU reduces the number of times the nomad server is queried to get detailed
+	// information on each nomad client (which is required to identify the associated
+	// droplet ID). In rare cases a droplet could become orphaned despite having registered
+	// as a nomad client earlier. In such cases it won't be detected until the LRU evicts it.
+	DropletMappingLRUSize   = 1024
+	DropletMappingLRUExpiry = 6 * time.Hour
 
 	configKeyCreateReservedAddresses                 = "create_reserved_addresses"
 	configKeyReserveIPv4Addresses                    = "reserve_ipv4_addresses"
@@ -31,6 +41,7 @@ const (
 	configKeySecureIntroductionTagPrefix             = "secure_introduction_tag_prefix"
 	configKeySecureIntroductionFilename              = "secure_introduction_filename"
 	configKeySecureIntroductionSecretValidity        = "secure_introduction_secret_validity"
+	configKeyInitGracePeriod                         = "init_grace_period"
 	configKeySecureIntroductionWrappedSecretValidity = "secure_introduction_wrapped_secret_validity"
 	configKeyIPv6                                    = "ipv6"
 	configKeyName                                    = "name"
@@ -74,15 +85,19 @@ type TargetPlugin struct {
 	clusterUtils *scaleutils.ClusterScaleUtils
 
 	reservedAddressesPool *ReservedAddressesPool
+
+	// maps nomad client IDs to droplet IDs
+	dropletMapping *expirable.LRU[string, int]
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
 func NewDODropletsPlugin(ctx context.Context, log hclog.Logger, vault VaultProxy) *TargetPlugin {
 	return &TargetPlugin{
-		ctx:    ctx,
-		logger: log,
-		vault:  vault,
+		ctx:            ctx,
+		logger:         log,
+		vault:          vault,
+		dropletMapping: expirable.NewLRU[string, int](DropletMappingLRUSize, nil, DropletMappingLRUExpiry),
 	}
 }
 
@@ -151,9 +166,15 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 
 	diff, direction := t.calculateDirection(total, action.Count)
 
+	var clients DropletIDs
 	switch direction {
 	case "in":
-		err = t.scaleIn(ctx, action.Count, diff, template, config)
+		// describe which nomad clients are known, to allow
+		// failed droplets to be the first to be scaled in
+		clients, err = t.getReadyNomadClients(ctx)
+		if err == nil {
+			err = t.scaleIn(ctx, clients, action.Count, diff, template, config)
+		}
 	case "out":
 		err = t.scaleOut(ctx, action.Count, diff, template, config)
 	default:
@@ -168,6 +189,66 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 		err = fmt.Errorf("failed to perform scaling action: %w", err)
 	}
 	return err
+}
+
+// getReadyNomadClients returns a set of droplet IDs
+// where the nomad client is running and has "ready" status.
+func (t *TargetPlugin) getReadyNomadClients(ctx context.Context) (DropletIDs, error) {
+	result := make(DropletIDs)
+	cfg := nomad.ConfigFromNamespacedMap(t.config)
+	client, err := api.NewClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate Nomad client: %v", err)
+	}
+	nodes, _, err := client.Nodes().List(&api.QueryOptions{Params: map[string]string{"resources": "true"}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Nomad nodes from API: %v", err)
+	}
+
+	q := api.QueryOptions{
+		AllowStale: true,
+	}
+	for _, node := range nodes {
+		// TODO: filter out nodes which are not part of our node pool.
+		// This is just an optimisation, as it's only droplets which aren't in any node pool
+		// which are susceptible to being considered orphans.
+
+		t.logger.Debug("found node",
+			"node_id", node.ID, "datacenter", node.Datacenter, "node_class", node.NodeClass, "node_pool", node.NodePool,
+			"status", node.Status, "eligibility", node.SchedulingEligibility, "draining", node.Drain, "all", fmt.Sprintf("%+v", node),
+		)
+		if node.Status != "ready" {
+			t.logger.Info("node is known as a nomad client but its status is not ready", "node ID", node.ID, "status", node.Status)
+			continue
+		}
+
+		if dropletID, exists := t.dropletMapping.Get(node.ID); exists {
+			// this node's droplet ID is already known, so include it
+			result[dropletID] = struct{}{}
+			continue
+		}
+
+		// The summary daa returned by client.Nodes() does not contain sufficient metadaa to determine
+		// the droplet ID; a follow-up call to `Info()` is required.
+		node, _, err := client.Nodes().Info(node.ID, &q)
+		if err != nil {
+			t.logger.Warn("cannot get node info", "node ID", node.ID, "err", err)
+			continue
+		}
+		dropletID, ok := node.Attributes["unique.platform.digitalocean.id"]
+		if !ok || dropletID == "" {
+			t.logger.Warn("cannot find droplet ID", "NodeID", node.ID, "attributes", node.Attributes, "node", fmt.Sprintf("%+v", node), "err", err)
+			continue
+		}
+		t.logger.Debug("Found droplet ID for node", "NodeID", node.ID, "droplet ID", dropletID)
+		numericID, err := strconv.Atoi(dropletID)
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert %v to an integer: %w", dropletID, err)
+		}
+		result[numericID] = struct{}{}
+		t.dropletMapping.Add(node.ID, numericID)
+	}
+	return result, nil
 }
 
 // Status satisfies the Status function on the target.Target interface.
@@ -341,6 +422,25 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		)
 	}
 
+	initGracePeriodS, ok := t.getValue(
+		config,
+		configKeyInitGracePeriod,
+	)
+	if !ok {
+		// if no grace period was provided, disable this feature by
+		// setting a zero duration
+		initGracePeriodS = "0m"
+	}
+
+	initGracePeriod, err := time.ParseDuration(initGracePeriodS)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"config param %s is not parseable as a duration: %w",
+			configKeyInitGracePeriod,
+			err,
+		)
+	}
+
 	sshKeyFingerprintAsString, _ := t.getValue(config, configKeySshKeys)
 	tagsAsString, _ := t.getValue(config, configKeyTags)
 	userData, _ := t.getValue(config, configKeyUserData)
@@ -359,6 +459,7 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 
 	return &dropletTemplate{
 		createReservedAddresses:     createReservedAddresses,
+		initGracePeriod:             initGracePeriod,
 		ipv6:                        ipv6,
 		name:                        name,
 		region:                      region,

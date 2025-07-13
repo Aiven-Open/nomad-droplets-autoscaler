@@ -233,7 +233,9 @@ func deleteOrphanedDroplets(ctx context.Context, logger hclog.Logger, dropletsSe
 				continue
 			}
 
-			if _, err := dropletsService.Delete(ctx, droplet.ID); err != nil {
+			if _, err := dropletsService.Delete(ctx, droplet.ID); err == nil {
+				logger.Info("deleted orphaned droplet", "droplet ID", droplet.ID)
+			} else {
 				logger.Error("cannot delete droplet", "error", err, "droplet ID", droplet.ID)
 			}
 		}

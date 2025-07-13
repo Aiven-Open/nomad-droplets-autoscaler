@@ -212,14 +212,14 @@ func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
 		// TODO: filter out nodes which are not part of our node pool
 		// This is just an optimisation, as it's only droplets which aren't in any node pool
 		// which are susceptible to being considered orphans
-		t.logger.Info("found node",
-			"node_id", n.ID, "datacenter", n.Datacenter, "node_class", n.NodeClass, "node_pool", n.NodePool,
-			"status", n.Status, "eligibility", n.SchedulingEligibility, "draining", n.Drain, "all", fmt.Sprintf("%+v", n),
-		)
 		if dropletID, exists := t.dropletMapping.Get(n.ID); exists {
 			result[dropletID] = struct{}{}
 			continue
 		}
+		t.logger.Info("found node",
+			"node_id", n.ID, "datacenter", n.Datacenter, "node_class", n.NodeClass, "node_pool", n.NodePool,
+			"status", n.Status, "eligibility", n.SchedulingEligibility, "draining", n.Drain, "all", fmt.Sprintf("%+v", n),
+		)
 		node, _, err := client.Nodes().Info(n.ID, &q)
 		if err != nil {
 			t.logger.Warn("cannot get node info", "node ID", n.ID, "err", err)
@@ -230,7 +230,7 @@ func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
 			t.logger.Warn("cannot find droplet ID", "NodeID", n.ID, "attributes", n.Attributes, "node", fmt.Sprintf("%+v", node), "err", err)
 			continue
 		}
-		t.logger.Info("Found droplet ID", "NodeID", n.ID, "node", fmt.Sprintf("%+v", node))
+		t.logger.Info("Found droplet ID for node", "NodeID", n.ID, "droplet ID", dropletID)
 		numericID, err := strconv.Atoi(dropletID)
 		if err != nil {
 			return nil, fmt.Errorf("cannot convert %v to an integer: %w", dropletID, err)

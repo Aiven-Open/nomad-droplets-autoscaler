@@ -11,6 +11,7 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/hashicorp/go-hclog"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/hashicorp/nomad-autoscaler/plugins"
 	"github.com/hashicorp/nomad-autoscaler/plugins/base"
 	"github.com/hashicorp/nomad-autoscaler/plugins/target"
@@ -24,6 +25,8 @@ import (
 const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
+
+	DropletMappingLRUSize = 1024
 
 	secureIntroductionDefaultFilename = "/run/secure-introduction"
 
@@ -78,15 +81,25 @@ type TargetPlugin struct {
 	clusterUtils *scaleutils.ClusterScaleUtils
 
 	reservedAddressesPool *ReservedAddressesPool
+
+	// maps nomad client IDs to droplet IDs
+	dropletMapping *lru.Cache[string, int]
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
 func NewDODropletsPlugin(ctx context.Context, log hclog.Logger, vault VaultProxy) *TargetPlugin {
+	l, err := lru.New[string, int](DropletMappingLRUSize)
+	if err != nil {
+		// OOM?
+		panic(err)
+	}
+
 	return &TargetPlugin{
-		ctx:    ctx,
-		logger: log,
-		vault:  vault,
+		ctx:            ctx,
+		logger:         log,
+		vault:          vault,
+		dropletMapping: l,
 	}
 }
 
@@ -196,10 +209,17 @@ func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
 		AllowStale: true,
 	}
 	for _, n := range nodes {
+		// TODO: filter out nodes which are not part of our node pool
+		// This is just an optimisation, as it's only droplets which aren't in any node pool
+		// which are susceptible to being considered orphans
 		t.logger.Info("found node",
 			"node_id", n.ID, "datacenter", n.Datacenter, "node_class", n.NodeClass, "node_pool", n.NodePool,
 			"status", n.Status, "eligibility", n.SchedulingEligibility, "draining", n.Drain, "all", fmt.Sprintf("%+v", n),
 		)
+		if dropletID, exists := t.dropletMapping.Get(n.ID); exists {
+			result[dropletID] = struct{}{}
+			continue
+		}
 		node, _, err := client.Nodes().Info(n.ID, &q)
 		if err != nil {
 			t.logger.Warn("cannot get node info", "node ID", n.ID, "err", err)
@@ -215,10 +235,8 @@ func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
 			return nil, fmt.Errorf("cannot convert %v to an integer: %w", dropletID, err)
 		}
 		result[numericID] = struct{}{}
+		t.dropletMapping.Add(n.ID, numericID)
 	}
-	// TODO: filter out nodes which are not part of our node pool
-	// This is just an optimisation, as it's only droplets which aren't in any node pool
-	// which are susceptible to being considered orphans
 	return result, nil
 }
 

@@ -192,18 +192,23 @@ func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
 		return nil, fmt.Errorf("failed to list Nomad nodes from API: %v", err)
 	}
 
+	q := api.QueryOptions{
+		AllowStale: true,
+	}
 	for _, n := range nodes {
 		t.logger.Info("found node",
 			"node_id", n.ID, "datacenter", n.Datacenter, "node_class", n.NodeClass, "node_pool", n.NodePool,
 			"status", n.Status, "eligibility", n.SchedulingEligibility, "draining", n.Drain, "all", fmt.Sprintf("%+v", n),
 		)
-		dropletID, ok := n.Attributes["unique.hostname"]
+		node, _, err := client.Nodes().Info(n.ID, &q)
+		if err != nil {
+			t.logger.Warn("cannot get node info", "node ID", n.ID, "err", err)
+			continue
+		}
+		dropletID, ok := node.Attributes["unique.platform.digitalocean.id"]
 		if !ok || dropletID == "" {
-			q := api.QueryOptions{
-				AllowStale: true,
-			}
-			node, _, err := client.Nodes().Info(n.ID, &q)
 			t.logger.Warn("cannot find droplet ID", "NodeID", n.ID, "attributes", n.Attributes, "node", fmt.Sprintf("%+v", node), "err", err)
+			continue
 		}
 		numericID, err := strconv.Atoi(dropletID)
 		if err != nil {

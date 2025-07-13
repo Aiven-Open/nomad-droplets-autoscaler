@@ -371,51 +371,38 @@ func (t *TargetPlugin) deleteDroplets(
 ) error {
 	// create options. initially, these will be blank
 	var dropletsToDelete []int
-	opt := &godo.ListOptions{}
-	for {
-		droplets, resp, err := t.client.Droplets().ListByTag(ctx, tag, opt)
+	wg := &sync.WaitGroup{}
+	for droplet, err := range Unpaginate(ctx, Unarg(t.client.Droplets().ListByTag, tag), godo.ListOptions{}) {
 		if err != nil {
 			return err
 		}
 
-		wg := &sync.WaitGroup{}
-		for _, d := range droplets {
-			_, ok := instanceIDs[d.Name]
-			if ok {
-				wg.Add(1)
-				go func(dropletId int) {
-					defer wg.Done()
-					log := t.logger.With("action", "delete", "droplet_id", strconv.Itoa(dropletId))
-					err := shutdownDroplet(
-						ctx,
-						dropletId,
-						t.client.Droplets(),
-						t.client.DropletActions(),
-						log,
-					)
-					if err != nil {
-						log.Error("error deleting droplet", err)
-					}
-				}(d.ID)
-				dropletsToDelete = append(dropletsToDelete, d.ID)
-			}
+		_, ok := instanceIDs[droplet.Name]
+		if ok {
+			wg.Add(1)
+			go func(dropletId int) {
+				defer wg.Done()
+				log := t.logger.With("action", "delete", "droplet_id", strconv.Itoa(dropletId))
+				err := shutdownDroplet(
+					ctx,
+					dropletId,
+					t.client.Droplets(),
+					t.client.DropletActions(),
+					log,
+				)
+				if err != nil {
+					log.Error("error deleting droplet", err)
+				}
+			}(droplet.ID)
+			dropletsToDelete = append(dropletsToDelete, droplet.ID)
 		}
-		wg.Wait()
 
-		// if we deleted all droplets or if we are at the last page, break out the for loop
-		if len(dropletsToDelete) == len(instanceIDs) || resp.Links == nil ||
-			resp.Links.IsLastPage() {
+		// if we deleted all droplets
+		if len(dropletsToDelete) == len(instanceIDs) {
 			break
 		}
-
-		page, err := resp.Links.CurrentPage()
-		if err != nil {
-			return err
-		}
-
-		// set the page we want for the next request
-		opt.Page = page + 1
 	}
+	wg.Wait()
 
 	return nil
 }
@@ -427,26 +414,15 @@ func (t *TargetPlugin) countDroplets(
 	var total int64 = 0
 	var ready int64 = 0
 
-	opt := &godo.ListOptions{}
-	for {
-		droplets, resp, err := t.client.Droplets().ListByTag(ctx, template.name, opt)
+	for droplet, err := range Unpaginate(ctx, Unarg(t.client.Droplets().ListByTag, template.name), godo.ListOptions{}) {
 		if err != nil {
 			return 0, 0, err
 		}
 
-		total = total + int64(len(droplets))
-		ready = ready + countIf(droplets, isReady)
-
-		if resp.Links == nil || resp.Links.IsLastPage() {
-			break
+		total += 1
+		if isReady(droplet) {
+			ready += 1
 		}
-
-		page, err := resp.Links.CurrentPage()
-		if err != nil {
-			return 0, 0, err
-		}
-
-		opt.Page = page + 1
 	}
 
 	return total, ready, nil

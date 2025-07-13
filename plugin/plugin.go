@@ -212,7 +212,7 @@ func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
 		// TODO: filter out nodes which are not part of our node pool
 		// This is just an optimisation, as it's only droplets which aren't in any node pool
 		// which are susceptible to being considered orphans
-		t.logger.Info("found node",
+		t.logger.Debug("found node",
 			"node_id", n.ID, "datacenter", n.Datacenter, "node_class", n.NodeClass, "node_pool", n.NodePool,
 			"status", n.Status, "eligibility", n.SchedulingEligibility, "draining", n.Drain, "all", fmt.Sprintf("%+v", n),
 		)

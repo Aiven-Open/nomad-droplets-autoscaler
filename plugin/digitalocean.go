@@ -215,6 +215,7 @@ func (t *TargetPlugin) scaleOut(
 // but only if they have the tag shared by all droplets managed by the autoscaler,
 // and which were not recently created.
 func deleteOrphanedDroplets(ctx context.Context, logger hclog.Logger, dropletsService Droplets, whitelist DropletIDs, template *dropletTemplate) {
+	logger.Info("checking for orphaned droplets", "whitelist", whitelist)
 	for droplet, err := range Unpaginate(ctx, Unarg(dropletsService.ListByTag, template.name), godo.ListOptions{}) {
 		if err != nil {
 			logger.Error("cannot retrieve droplets", "error", err)

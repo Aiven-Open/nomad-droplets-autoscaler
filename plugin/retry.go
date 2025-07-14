@@ -60,7 +60,7 @@ func retry(
 			break
 		}
 		lastErr = err
-		logger.Info(
+		logger.Debug(
 			"retry attempt failed",
 			"retry count", retryCount,
 			"retriable error", err,

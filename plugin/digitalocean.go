@@ -222,7 +222,9 @@ func deleteOrphanedDroplets(ctx context.Context, logger hclog.Logger, dropletsSe
 			return
 		}
 		// This could be done in parallel, but shouldn't be necessary
-		if _, exists := whitelist[droplet.ID]; !exists {
+		if _, exists := whitelist[droplet.ID]; exists {
+			logger.Info("droplet is a nomad client, so not considering an orphan", "droplet ID", droplet.ID)
+		} else {
 			dt, err := time.Parse(time.RFC3339, droplet.Created)
 			if err != nil {
 				logger.Error("cannot parse droplet creation time. Not treating as an orphan", "error", err, "droplet ID", droplet.ID)

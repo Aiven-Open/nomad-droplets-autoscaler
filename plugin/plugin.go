@@ -11,7 +11,8 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/hashicorp/go-hclog"
-	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/hashicorp/golang-lru/v2/expirable"
+
 	"github.com/hashicorp/nomad-autoscaler/plugins"
 	"github.com/hashicorp/nomad-autoscaler/plugins/base"
 	"github.com/hashicorp/nomad-autoscaler/plugins/target"
@@ -26,7 +27,12 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	DropletMappingLRUSize = 1024
+	// the LRU reduces the number of times the nomad server is queried to get detailed
+	// information on each nomad client (which is required to identify the associated
+	// droplet ID). In rare cases a droplet could become orphaned despite having registered
+	// as a nomad client earlier. In such cases it won't be detected until the LRU evicts it.
+	DropletMappingLRUSize   = 1024
+	DropletMappingLRUExpiry = 6 * time.Hour
 
 	secureIntroductionDefaultFilename = "/run/secure-introduction"
 
@@ -83,17 +89,13 @@ type TargetPlugin struct {
 	reservedAddressesPool *ReservedAddressesPool
 
 	// maps nomad client IDs to droplet IDs
-	dropletMapping *lru.Cache[string, int]
+	dropletMapping *expirable.LRU[string, int]
 }
 
 // NewDODropletsPlugin returns the DO Droplets implementation of the target.Target
 // interface.
 func NewDODropletsPlugin(ctx context.Context, log hclog.Logger, vault VaultProxy) *TargetPlugin {
-	l, err := lru.New[string, int](DropletMappingLRUSize)
-	if err != nil {
-		// OOM?
-		panic(err)
-	}
+	l := expirable.NewLRU[string, int](DropletMappingLRUSize, nil, DropletMappingLRUExpiry)
 
 	return &TargetPlugin{
 		ctx:            ctx,

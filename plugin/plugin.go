@@ -175,7 +175,7 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 	case "in":
 		// describe which nomad clients are known, to allow
 		// failed droplets to be the first to be scaled in
-		clients, err = t.getClients(ctx)
+		clients, err = t.getReadyNomadClients(ctx)
 		if err == nil {
 			err = t.scaleIn(ctx, clients, action.Count, diff, template, config)
 		}
@@ -195,7 +195,9 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 	return err
 }
 
-func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
+// getReadyNomadClients returns a set of droplet IDs
+// where the nomad client is running and has "ready" status.
+func (t *TargetPlugin) getReadyNomadClients(ctx context.Context) (DropletIDs, error) {
 	result := make(DropletIDs)
 	cfg := nomad.ConfigFromNamespacedMap(t.config)
 	client, err := api.NewClient(cfg)
@@ -222,6 +224,10 @@ func (t *TargetPlugin) getClients(ctx context.Context) (DropletIDs, error) {
 			"node_id", n.ID, "datacenter", n.Datacenter, "node_class", n.NodeClass, "node_pool", n.NodePool,
 			"status", n.Status, "eligibility", n.SchedulingEligibility, "draining", n.Drain, "all", fmt.Sprintf("%+v", n),
 		)
+		if n.Status != "ready" {
+			t.logger.Warn("node is known as a nomad client but its status is not ready", "node ID", n.ID, "status", n.Status)
+			continue
+		}
 		node, _, err := client.Nodes().Info(n.ID, &q)
 		if err != nil {
 			t.logger.Warn("cannot get node info", "node ID", n.ID, "err", err)

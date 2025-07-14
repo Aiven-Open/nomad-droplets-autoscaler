@@ -63,13 +63,13 @@ func retry(
 		logger.Info(
 			"retry attempt failed",
 			"retry count", retryCount,
-			"error", err,
+			"retriable error", err,
 		)
 
 		retryCount++
 
 		if retryCount == retryAttempts {
-			return errors.New("reached retry limit")
+			return fmt.Errorf("reached retry limit: %w", err)
 		}
 		select {
 		case <-ctx.Done():

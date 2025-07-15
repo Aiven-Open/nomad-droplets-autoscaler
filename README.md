@@ -38,8 +38,6 @@ check "hashistack-allocated-cpu" {
     ipv6                                         = "true"
     name                                         = "hashi-worker"
     node_class                                   = "hashistack"
-    node_drain_deadline                          = "5m"
-    node_purge                                   = "true"
     region                                       = "nyc1"
     reserve_ipv4_addresses                       = "false"
     reserve_ipv6_addresses                       = "false"
@@ -80,18 +78,6 @@ check "hashistack-allocated-cpu" {
   identifier used to group nodes into a pool of resource. Conflicts with
   `datacenter`.
 
-- `node_drain_deadline` `(duration: "15m")` The Nomad [drain deadline](https://www.nomadproject.io/api-docs/nodes#deadline) to use when performing node draining
-  actions. **Note that the default value for this setting differs from Nomad's
-  default of 1h.**
-
-- `node_drain_ignore_system_jobs` `(bool: "false")` A boolean flag used to
-  control if system jobs should be stopped when performing node draining
-  actions.
-
-- `node_purge` `(bool: "false")` A boolean flag to determine whether Nomad
-  clients should be [purged](https://www.nomadproject.io/api-docs/nodes#purge-node) when performing scale in
-  actions.
-
 - `ipv6` `(bool: "false")` A boolean flag to determine whether droplets should have IPv6 enabled.
 
 - `create_reserved_addresses` `(bool: "false")` A boolean flag to determine whether reserved IP addresses should be automatically created when required.
@@ -105,15 +91,11 @@ check "hashistack-allocated-cpu" {
 
 - `secure_introduction_tag_prefix` `(string: "")` If defined (and `secure_introduction_approle` is also defined), a request-wrapped SecretID will be stored in a tag prefixed with this string
 
-- `secure_introduction_secret_validity` `(duration: 5m)` The duration a SecretID is valid for, from the time it is generated.
+- `secure_introduction_secret_validity` `(duration: <required if approle is defined>)` The duration a SecretID is valid for, from the time it is generated.
 
-- `secure_introduction_wrapped_secret_validity` `(duration: 5m)` The duration the request wrapper for the SecretID is valid for, from the time it is generated.
+- `secure_introduction_wrapped_secret_validity` `(duration: <required if approle is defined>)` The duration the request wrapper for the SecretID is valid for, from the time it is generated.
 
-- `secure_introduction_filename` `(string: "/run/secure-introduction")` The filename to store the unwrapped SecretID in
-
-- `node_selector_strategy` `(string: "least_busy")` The strategy to use when
-  selecting nodes for termination. Refer to the [node selector
-  strategy](https://www.nomadproject.io/docs/autoscaling/internals/node-selector-strategy) documentation for more information.
+- `secure_introduction_filename` `(string: <required if approle is defined>)` The filename to store the unwrapped SecretID in
 
 ### Secure Introduction
 

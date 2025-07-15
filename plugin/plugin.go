@@ -24,8 +24,6 @@ const (
 	// pluginName is the unique name of the this plugin amongst Target plugins.
 	pluginName = "do-droplets"
 
-	secureIntroductionDefaultFilename = "/run/secure-introduction"
-
 	configKeyCreateReservedAddresses                 = "create_reserved_addresses"
 	configKeyReserveIPv4Addresses                    = "reserve_ipv4_addresses"
 	configKeyReserveIPv6Addresses                    = "reserve_ipv6_addresses"
@@ -298,8 +296,8 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 	}
 
 	secureIntroductionFilename, ok := t.getValue(config, configKeySecureIntroductionFilename)
-	if !ok {
-		secureIntroductionFilename = secureIntroductionDefaultFilename
+	if !ok && secureIntroductionAppRole != "" {
+		return nil, fmt.Errorf("%q is required when %q is set", configKeySecureIntroductionFilename, configKeySecureIntroductionAppRole)
 	}
 
 	secureIntroductionWrappedSecretValidityS, ok := t.getValue(
@@ -307,7 +305,11 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		configKeySecureIntroductionWrappedSecretValidity,
 	)
 	if !ok {
-		secureIntroductionWrappedSecretValidityS = "5m"
+		if secureIntroductionAppRole == "" {
+			secureIntroductionWrappedSecretValidityS = "0m"
+		} else {
+			return nil, fmt.Errorf("%q is required when %q is set", configKeySecureIntroductionWrappedSecretValidity, configKeySecureIntroductionAppRole)
+		}
 	}
 
 	secureIntroductionWrappedSecretValidity, err := time.ParseDuration(secureIntroductionWrappedSecretValidityS)
@@ -323,7 +325,11 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		configKeySecureIntroductionSecretValidity,
 	)
 	if !ok {
-		secureIntroductionSecretValidityS = "5m"
+		if secureIntroductionAppRole == "" {
+			secureIntroductionSecretValidityS = "0m"
+		} else {
+			return nil, fmt.Errorf("%q is required when %q is set", configKeySecureIntroductionSecretValidity, configKeySecureIntroductionAppRole)
+		}
 	}
 
 	secureIntroductionSecretValidity, err := time.ParseDuration(secureIntroductionSecretValidityS)

@@ -42,15 +42,18 @@ func TestScaleOutWithSecureIntroductionInTag(t *testing.T) {
 	defer cancel()
 	mock := createMockGodo()
 	config := map[string]string{
-		"name":                           "mydropletname",
-		"region":                         "lon1",
-		"size":                           "s1",
-		"snapshot_id":                    "12345",
-		"token":                          "t0ken",
-		"vpc_uuid":                       uuid.New().String(),
-		"tags":                           "foo,bar,baz",
-		"secure_introduction_approle":    "droplet-approle",
-		"secure_introduction_tag_prefix": "banana-",
+		"name":                                "mydropletname",
+		"region":                              "lon1",
+		"size":                                "s1",
+		"snapshot_id":                         "12345",
+		"token":                               "t0ken",
+		"vpc_uuid":                            uuid.New().String(),
+		"tags":                                "foo,bar,baz",
+		"secure_introduction_approle":         "droplet-approle",
+		"secure_introduction_filename":        "/run/secure-introduction",
+		"secure_introduction_secret_validity": "1h",
+		"secure_introduction_wrapped_secret_validity": "5m",
+		"secure_introduction_tag_prefix":              "banana-",
 	}
 	tp := &TargetPlugin{
 		ctx:    ctx,

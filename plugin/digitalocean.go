@@ -24,6 +24,7 @@ const (
 
 type dropletTemplate struct {
 	createReservedAddresses     bool
+	initGracePeriod             time.Duration
 	ipv6                        bool
 	name                        string
 	region                      string
@@ -41,6 +42,8 @@ type dropletTemplate struct {
 	userData                    string
 	vpc                         string
 }
+
+type DropletIDs map[int]struct{}
 
 func (t *TargetPlugin) scaleOut(
 	ctx context.Context,
@@ -208,8 +211,43 @@ func (t *TargetPlugin) scaleOut(
 	return nil
 }
 
+// deleteOrphanedDroplets will destroy any droplets which are not whitelisted,
+// but only if they have the tag shared by all droplets managed by the autoscaler,
+// and which were not recently created.
+func deleteOrphanedDroplets(ctx context.Context, logger hclog.Logger, dropletsService Droplets, whitelist DropletIDs, template *dropletTemplate) {
+	logger.Info("checking for orphaned droplets", "whitelist size", len(whitelist))
+	for droplet, err := range Unpaginate(ctx, Unarg(dropletsService.ListByTag, template.name), godo.ListOptions{}) {
+		if err != nil {
+			logger.Error("cannot retrieve droplets", "error", err)
+			return
+		}
+		// This could be done in parallel, but shouldn't be necessary
+		if _, exists := whitelist[droplet.ID]; exists {
+			logger.Debug("droplet is a nomad client, so not considering an orphan", "droplet ID", droplet.ID)
+		} else {
+			dt, err := time.Parse(time.RFC3339, droplet.Created)
+			if err != nil {
+				logger.Error("cannot parse droplet creation time. Not treating as an orphan", "error", err, "droplet ID", droplet.ID)
+				continue
+			}
+			if time.Since(dt) < template.initGracePeriod {
+				logger.Debug("Droplet was very recently created. Not treating as an orphan", "droplet ID", droplet.ID)
+				continue
+			}
+
+			if _, err := dropletsService.Delete(ctx, droplet.ID); err == nil {
+				logger.Info("deleted orphaned droplet", "droplet ID", droplet.ID)
+			} else {
+				logger.Error("cannot delete droplet", "error", err, "droplet ID", droplet.ID)
+			}
+		}
+	}
+	logger.Debug("finished checking for orphaned droplets")
+}
+
 func (t *TargetPlugin) scaleIn(
 	ctx context.Context,
+	clients DropletIDs,
 	desired, diff int64,
 	template *dropletTemplate,
 	config map[string]string,
@@ -217,6 +255,10 @@ func (t *TargetPlugin) scaleIn(
 	ids, err := t.clusterUtils.RunPreScaleInTasks(ctx, config, int(diff))
 	if err != nil {
 		return fmt.Errorf("failed to perform pre-scale Nomad scale in tasks: %w", err)
+	}
+
+	if template.initGracePeriod > time.Second {
+		go deleteOrphanedDroplets(ctx, t.logger, t.client.Droplets(), clients, template)
 	}
 
 	// Grab the instanceIDs
@@ -332,51 +374,38 @@ func (t *TargetPlugin) deleteDroplets(
 ) error {
 	// create options. initially, these will be blank
 	var dropletsToDelete []int
-	opt := &godo.ListOptions{}
-	for {
-		droplets, resp, err := t.client.Droplets().ListByTag(ctx, tag, opt)
+	wg := &sync.WaitGroup{}
+	for droplet, err := range Unpaginate(ctx, Unarg(t.client.Droplets().ListByTag, tag), godo.ListOptions{}) {
 		if err != nil {
 			return err
 		}
 
-		wg := &sync.WaitGroup{}
-		for _, d := range droplets {
-			_, ok := instanceIDs[d.Name]
-			if ok {
-				wg.Add(1)
-				go func(dropletId int) {
-					defer wg.Done()
-					log := t.logger.With("action", "delete", "droplet_id", strconv.Itoa(dropletId))
-					err := shutdownDroplet(
-						ctx,
-						dropletId,
-						t.client.Droplets(),
-						t.client.DropletActions(),
-						log,
-					)
-					if err != nil {
-						log.Error("error deleting droplet", err)
-					}
-				}(d.ID)
-				dropletsToDelete = append(dropletsToDelete, d.ID)
-			}
+		_, ok := instanceIDs[droplet.Name]
+		if ok {
+			wg.Add(1)
+			go func(dropletId int) {
+				defer wg.Done()
+				log := t.logger.With("action", "delete", "droplet_id", strconv.Itoa(dropletId))
+				err := shutdownDroplet(
+					ctx,
+					dropletId,
+					t.client.Droplets(),
+					t.client.DropletActions(),
+					log,
+				)
+				if err != nil {
+					log.Error("error deleting droplet", err)
+				}
+			}(droplet.ID)
+			dropletsToDelete = append(dropletsToDelete, droplet.ID)
 		}
-		wg.Wait()
 
-		// if we deleted all droplets or if we are at the last page, break out the for loop
-		if len(dropletsToDelete) == len(instanceIDs) || resp.Links == nil ||
-			resp.Links.IsLastPage() {
+		// if we deleted all droplets
+		if len(dropletsToDelete) == len(instanceIDs) {
 			break
 		}
-
-		page, err := resp.Links.CurrentPage()
-		if err != nil {
-			return err
-		}
-
-		// set the page we want for the next request
-		opt.Page = page + 1
 	}
+	wg.Wait()
 
 	return nil
 }
@@ -388,26 +417,15 @@ func (t *TargetPlugin) countDroplets(
 	var total int64 = 0
 	var ready int64 = 0
 
-	opt := &godo.ListOptions{}
-	for {
-		droplets, resp, err := t.client.Droplets().ListByTag(ctx, template.name, opt)
+	for droplet, err := range Unpaginate(ctx, Unarg(t.client.Droplets().ListByTag, template.name), godo.ListOptions{}) {
 		if err != nil {
 			return 0, 0, err
 		}
 
-		total = total + int64(len(droplets))
-		ready = ready + countIf(droplets, isReady)
-
-		if resp.Links == nil || resp.Links.IsLastPage() {
-			break
+		total += 1
+		if isReady(droplet) {
+			ready += 1
 		}
-
-		page, err := resp.Links.CurrentPage()
-		if err != nil {
-			return 0, 0, err
-		}
-
-		opt.Page = page + 1
 	}
 
 	return total, ready, nil

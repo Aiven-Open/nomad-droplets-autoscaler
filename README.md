@@ -35,6 +35,7 @@ check "hashistack-allocated-cpu" {
   # ...
   target "do-droplets" {
     create_reserved_addresses                    = "true"
+    init_grace_period                            = "10m"
     ipv6                                         = "true"
     name                                         = "hashi-worker"
     node_class                                   = "hashistack"
@@ -57,6 +58,8 @@ check "hashistack-allocated-cpu" {
 ```
 
 - `name` `(string: <required>)` - A logical name of a Droplet "group". Every managed Droplet will be tagged with this value and its name is this value with a random suffix
+
+- `init_grace_period` `(duration: "15m")` Any droplets tagged with the `name` value which are older than this duration and still not recognised as a nomad client are considered to be orphans, and will be deleted at a subsequent scale-in event. Setting this to zero will disable this feature.
 
 - `region` `(string: <required>)` - The region to start in.
 

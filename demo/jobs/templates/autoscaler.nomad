@@ -11,7 +11,7 @@ job "autoscaler" {
       driver = "docker"
 
       artifact {
-        source      = "https://github.com/Aiven-Open/nomad-droplets-autoscaler/releases/download/v0.0.25/nomad-droplets-autoscaler_Linux_x86_64.tar.gz"
+        source      = "https://github.com/Aiven-Open/nomad-droplets-autoscaler/releases/download/v0.1.7/nomad-droplets-autoscaler_Linux_x86_64.tar.gz"
         destination = "local/plugins/"
       }
 

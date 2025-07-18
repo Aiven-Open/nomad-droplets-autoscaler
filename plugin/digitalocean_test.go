@@ -2,14 +2,53 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/digitalocean/godo"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDeleteDropletsWhenFailedToJoinNomadCluster(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second*5)
+	defer cancel()
+	mock := createMockGodo()
+
+	whitelist := make(DropletIDs)
+	dt := &dropletTemplate{name: "banana", initGracePeriod: 15 * time.Minute}
+
+	testCases := []struct {
+		age          time.Duration
+		whitelisted  bool
+		expectDelete bool
+	}{
+		{age: time.Second, whitelisted: false, expectDelete: false},
+		{age: time.Hour, whitelisted: true, expectDelete: false},
+		{age: time.Hour, whitelisted: false, expectDelete: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%+v", tc), func(t *testing.T) {
+			droplet, _, err := mock.Droplets().Create(ctx, &godo.DropletCreateRequest{Region: "foo", Tags: []string{"banana"}})
+			require.NoError(t, err)
+			require.Contains(t, mock.droplets, droplet.ID)
+			droplet.Created = time.Now().Add(-tc.age).Format(time.RFC3339)
+			if tc.whitelisted {
+				whitelist[droplet.ID] = struct{}{}
+			}
+			deleteOrphanedDroplets(ctx, hclog.Default(), mock.Droplets(), whitelist, dt)
+			if tc.expectDelete {
+				require.NotContains(t, mock.droplets, droplet.ID)
+			} else {
+				require.Contains(t, mock.droplets, droplet.ID)
+			}
+		})
+	}
+}
 
 func TestScaleOut(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second*5)

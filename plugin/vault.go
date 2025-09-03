@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"regexp"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
 )
@@ -24,14 +26,21 @@ type VaultProxy interface {
 
 type vaultProxy struct {
 	client *vault.Client
+	logger hclog.Logger
 }
 
-func NewVault() (*vaultProxy, error) {
+func NewVault(logger hclog.Logger) (*vaultProxy, error) {
 	client, err := vault.New(vault.WithEnvironment())
 	if err != nil {
 		return nil, err
 	}
-	return &vaultProxy{client: client}, nil
+	if vaultAddr := os.Getenv("VAULT_ADDR"); len(vaultAddr) == 0 {
+		return nil, fmt.Errorf("VAULT_ADDR is not defined")
+	}
+	if vaultToken := os.Getenv("VAULT_TOKEN"); len(vaultToken) == 0 {
+		return nil, fmt.Errorf("VAULT_TOKEN is not defined")
+	}
+	return &vaultProxy{client: client, logger: logger}, nil
 }
 
 func (v *vaultProxy) GenerateSecretId(

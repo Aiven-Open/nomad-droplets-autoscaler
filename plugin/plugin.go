@@ -57,7 +57,7 @@ const (
 var (
 	PluginConfig = &plugins.InternalPluginConfig{
 		Factory: func(l hclog.Logger) interface{} {
-			return NewDODropletsPlugin(context.Background(), l, Must(NewVault()))
+			return NewDODropletsPlugin(context.Background(), l, Must(NewVault(l)))
 		},
 	}
 

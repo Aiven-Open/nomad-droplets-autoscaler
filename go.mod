@@ -1,19 +1,19 @@
 module github.com/Aiven-Open/nomad-droplets-autoscaler
 
-go 1.24
+go 1.25.0
 
 require (
 	github.com/coder/quartz v0.2.1
-	github.com/digitalocean/godo v1.159.0
+	github.com/digitalocean/godo v1.164.0
 	github.com/goccy/go-yaml v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/nomad-autoscaler v0.4.7
-	github.com/hashicorp/nomad/api v0.0.0-20250721135329-36b4aa79df33
+	github.com/hashicorp/nomad/api v0.0.0-20250916180042-1a19a16ee939
 	github.com/hashicorp/vault-client-go v0.4.3
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -26,7 +26,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/hashicorp/cronexpr v1.1.2 // indirect
+	github.com/hashicorp/cronexpr v1.1.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

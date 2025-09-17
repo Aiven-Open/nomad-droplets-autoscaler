@@ -29,7 +29,7 @@ type vaultProxy struct {
 	logger hclog.Logger
 }
 
-func NewVault(logger hclog.Logger) (*vaultProxy, error) {
+func NewVault(ctx context.Context, logger hclog.Logger) (*vaultProxy, error) {
 	client, err := vault.New(vault.WithEnvironment())
 	if err != nil {
 		return nil, err
@@ -42,7 +42,11 @@ func NewVault(logger hclog.Logger) (*vaultProxy, error) {
 	if len(vaultToken) == 0 {
 		return nil, fmt.Errorf("VAULT_TOKEN is not defined")
 	}
-	logger.Info("created vault client", "vault address", vaultAddr)
+	self, err := client.Auth.TokenLookUpSelf(ctx)
+	if err != nil {
+		logger.Warn("could not retrieve information on vault identity")
+	}
+	logger.Info("created vault client", "vault address", vaultAddr, "identity", fmt.Sprintf("%+v", self))
 	return &vaultProxy{client: client, logger: logger}, nil
 }
 

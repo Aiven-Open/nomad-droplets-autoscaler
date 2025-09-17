@@ -15,5 +15,6 @@ func main() {
 }
 
 func factory(log hclog.Logger) interface{} {
-	return plugin.NewDODropletsPlugin(context.Background(), log, plugin.Must(plugin.NewVault(log)))
+	ctx := context.Background()
+	return plugin.NewDODropletsPlugin(ctx, log, plugin.Must(plugin.NewVault(ctx, log)))
 }

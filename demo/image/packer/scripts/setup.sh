@@ -18,12 +18,12 @@ curl -sSL https://github.com/containernetworking/plugins/releases/download/v1.7.
 curl -sL get.hashi-up.dev | sh
 
 hashi-up consul install \
-  --version 1.21.2 \
+  --version 1.21.4 \
   --local \
   --skip-enable
 
 hashi-up nomad install \
-  --version 1.10.2 \
+  --version 1.10.4 \
   --local \
   --skip-enable
 

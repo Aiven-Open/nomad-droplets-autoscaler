@@ -155,8 +155,8 @@ EOF
 server:
   http_listen_port: {{ env "NOMAD_PORT_promtail" }}
   grpc_listen_port: 0
+  log_level: "debug"
 
-log_level: "DEBUG"
 
 positions:
   filename: /tmp/positions.yaml

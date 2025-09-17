@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strconv"
@@ -35,7 +36,7 @@ type dropletTemplate struct {
 	secureIntroductionTagPrefix string
 	secretValidity              time.Duration
 	wrappedSecretValidity       time.Duration
-	secureIntroductionFilename  string
+	secureIntroductionDirectory string
 	size                        string
 	snapshotID                  int
 	sshKeys                     []string
@@ -122,7 +123,7 @@ func (t *TargetPlugin) scaleOut(
 				}
 
 				if template.secureIntroductionAppRole != "" &&
-					template.secureIntroductionFilename != "" {
+					template.secureIntroductionDirectory != "" {
 					var allowedIPv4 string
 					var allowedIPv6 string
 					if template.reserveIPv4Addresses {
@@ -548,6 +549,10 @@ func generateUserDataForSecureIntroduction(
 	template *dropletTemplate,
 	vault VaultProxy,
 ) (string, error) {
+	roleId, err := vault.GetRoleId(ctx, template.secureIntroductionAppRole)
+	if err != nil {
+		return "", fmt.Errorf("problem getting approle ID: %w", err)
+	}
 	if allowedIPv4 != "" || allowedIPv6 != "" {
 		// because at least one reserved IP address is being used,
 		// it is possible to generate the wrapped secret before
@@ -563,11 +568,21 @@ func generateUserDataForSecureIntroduction(
 			return "", fmt.Errorf("failed to generate wrapped secure introduction: %w", err)
 		}
 		shellScript := fmt.Sprintf(
-			`#!/bin/sh
-echo "%v" > "%v"
+			`#!/bin/bash
+set -exuo pipefail
+ROLE_ID="%v"
+VAULT_ADDR="%v"
+export VAULT_ADDR
+cd "%v"
+WRAPPED_SECRET_ID="%v"
+SECRET_ID="@vault unwrap -field secret_id "$WRAPPED_SECRET_ID"@"
+vault unwrap -field secret_id "$WRAPPED_SECRET_ID" > "secret_id"
+echo "$ROLE_ID" > "role_id"
 `,
+			roleId,
+			vault.GetAddress(),
+			template.secureIntroductionDirectory,
 			wrappedSecretId,
-			template.secureIntroductionFilename,
 		)
 		result, err := PrependShellScriptToUserData(
 			userData,
@@ -589,32 +604,39 @@ echo "%v" > "%v"
 			   retries before failing.
 			*/
 			shellScript := fmt.Sprintf(strings.ReplaceAll(
-				`#!/bin/sh
-
+				`#!/bin/bash
+set -exuo pipefail
+ROLE_ID="%v"
+VAULT_ADDR="%v"
+export VAULT_ADDR
 TAGS_TEMPFILE=@mktemp@
+cd "%v"
 for I in @seq 1 60@ ; do
     if curl -o "$TAGS_TEMPFILE" http://169.254.169.254/metadata/v1/tags ; then
-        if [ -f "$TAGS_TEMPFILE" ] ; then
-            sed -n 's#%v##p' < "$TAGS_TEMPFILE" > "%v"
-            if [ @wc -l < "%v"@ -eq 1 ] ; then
-                rm "$TAGS_TEMPFILE"
-                exit 0
-            fi
+        if [[ -f "$TAGS_TEMPFILE" ]] ; then
+            WRAPPED_SECRET_ID="@sed -n 's#%v##p' < "$TAGS_TEMPFILE" | sed -n 's#:#.#p'@"
+			if [[ -n "$WRAPPED_SECRET_ID" ]] ; then
+				vault unwrap -field secret_id "$WRAPPED_SECRET_ID" > "secret_id"
+				echo "$ROLE_ID" > "role_id"
+				rm "$TAGS_TEMPFILE"
+				break
+			fi
         fi
     fi
     sleep 1
 done
-exit 1
 `, "@", "`"),
+				roleId,
+				vault.GetAddress(),
+				template.secureIntroductionDirectory,
 				prefix,
-				template.secureIntroductionFilename,
-				template.secureIntroductionFilename,
 			)
 			result, err := PrependShellScriptToUserData(
 				userData,
 				shellScript,
 			)
 			if err == nil {
+				logger.Info("Added custom user data", "original", userData, "modified", result)
 				return result, nil
 			} else {
 				return "", fmt.Errorf(
@@ -678,9 +700,17 @@ func generateTagForSecureIntroduction(
 			dropletID,
 			err)
 	}
-	tagWithSecretID := fmt.Sprintf("%v%v", template.secureIntroductionTagPrefix, wrappedSecretId)
-	if _, _, err = tags.Create(ctx, &godo.TagCreateRequest{Name: tagWithSecretID}); err != nil {
-		return fmt.Errorf("could not create a new tag: %w", err)
+	// tags start with "hvs." and "." is not allowed in DO tags, so map it to ":"
+	tagWithSecretID := fmt.Sprintf("%v%v", template.secureIntroductionTagPrefix, strings.ReplaceAll(wrappedSecretId, ".", ":"))
+	if _, resp, err := tags.Create(ctx, &godo.TagCreateRequest{Name: tagWithSecretID}); err != nil {
+		errBody, errReadBody := io.ReadAll(resp.Body)
+		if errReadBody != nil {
+			errBody = []byte{}
+		}
+		if len(errBody) > 500 {
+			errBody = errBody[:500]
+		}
+		return fmt.Errorf("could not create a new tag %q: (%v) %w", tagWithSecretID, string(errBody), err)
 	}
 	// There are often conflicts if trying to set tags on a resource while another operation
 	// is in progress, so this must also be retried if a 422 response is seen

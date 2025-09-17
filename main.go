@@ -16,5 +16,9 @@ func main() {
 
 func factory(log hclog.Logger) interface{} {
 	ctx := context.Background()
-	return plugin.NewDODropletsPlugin(ctx, log, plugin.Must(plugin.NewVault(ctx, log)))
+	v, err := plugin.NewVault(ctx, log)
+	if err != nil {
+		log.Error("cannot create vault client", "error", err)
+	}
+	return plugin.NewDODropletsPlugin(ctx, log, v)
 }

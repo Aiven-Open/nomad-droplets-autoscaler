@@ -98,7 +98,7 @@ check "hashistack-allocated-cpu" {
 
 - `secure_introduction_wrapped_secret_validity` `(duration: <required if approle is defined>)` The duration the request wrapper for the SecretID is valid for, from the time it is generated.
 
-- `secure_introduction_filename` `(string: <required if approle is defined>)` The filename to store the unwrapped SecretID in
+- `secure_introduction_directory` `(string: "/run/vault-agent/")` The directory to store the unwrapped SecretID in, along with the RoleID
 
 ### Secure Introduction
 

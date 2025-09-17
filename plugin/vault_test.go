@@ -14,7 +14,7 @@ func TestMockVault(t *testing.T) {
 		Name:  "my-app",
 		Level: hclog.LevelFromString("DEBUG"),
 	})
-	v, err := NewVault(ctx, logger)
+	v, err := NewVault(ctx, logger, WithStaticToken([]byte("foo")), WithStaticAddress([]byte("bar")))
 	require.NoError(t, err)
 	secret, err := v.GenerateSecretId(ctx, "mock", "1.2.3.4", "fe80::/10", time.Minute, time.Minute)
 	require.NoError(t, err)

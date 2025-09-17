@@ -38,7 +38,7 @@ const (
 	configKeyReserveIPv6Addresses                    = "reserve_ipv6_addresses"
 	configKeySecureIntroductionAppRole               = "secure_introduction_approle"
 	configKeySecureIntroductionTagPrefix             = "secure_introduction_tag_prefix"
-	configKeySecureIntroductionFilename              = "secure_introduction_filename"
+	configKeySecureIntroductionDirectory             = "secure_introduction_directory"
 	configKeySecureIntroductionSecretValidity        = "secure_introduction_secret_validity"
 	configKeyInitGracePeriod                         = "init_grace_period"
 	configKeySecureIntroductionWrappedSecretValidity = "secure_introduction_wrapped_secret_validity"
@@ -58,7 +58,11 @@ var (
 	PluginConfig = &plugins.InternalPluginConfig{
 		Factory: func(l hclog.Logger) interface{} {
 			ctx := context.Background()
-			return NewDODropletsPlugin(ctx, l, Must(NewVault(ctx, l)))
+			v, err := NewVault(ctx, l)
+			if err != nil {
+				l.Error("cannot create vault client", "error", err)
+			}
+			return NewDODropletsPlugin(ctx, l, v)
 		},
 	}
 
@@ -312,9 +316,9 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		)
 	}
 
-	secureIntroductionFilename, ok := t.getValue(config, configKeySecureIntroductionFilename)
+	secureIntroductionDirectory, ok := t.getValue(config, configKeySecureIntroductionDirectory)
 	if !ok && secureIntroductionAppRole != "" {
-		return nil, fmt.Errorf("%q is required when %q is set", configKeySecureIntroductionFilename, configKeySecureIntroductionAppRole)
+		secureIntroductionDirectory = "/run/vault-agent/"
 	}
 
 	secureIntroductionWrappedSecretValidityS, ok := t.getValue(
@@ -403,7 +407,7 @@ func (t *TargetPlugin) createDropletTemplate(config map[string]string) (*droplet
 		reserveIPv6Addresses:        reserveIPv6Addresses,
 		secretValidity:              secureIntroductionSecretValidity,
 		secureIntroductionAppRole:   secureIntroductionAppRole,
-		secureIntroductionFilename:  secureIntroductionFilename,
+		secureIntroductionDirectory: secureIntroductionDirectory,
 		secureIntroductionTagPrefix: secureIntroductionTagPrefix,
 		size:                        size,
 		snapshotID:                  int(snapshotID),

@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -12,11 +11,11 @@ import (
 func PrependShellScriptToUserData(originalUserData, script string) (string, error) {
 	originalUserData = strings.TrimSpace(originalUserData)
 	if originalUserData != "" && !strings.HasPrefix(originalUserData, "#!/bin/bash\n") {
-		return "", errors.New("only bash scripts are supported")
+		return "", fmt.Errorf("only bash scripts are supported, not ones starting with %v", originalUserData[:20])
 	}
 	script = strings.TrimSpace(script)
 	if !strings.HasPrefix(script, "#!/bin/bash\n") {
-		return "", errors.New("only bash scripts are supported in the injected script")
+		return "", fmt.Errorf("only bash scripts are supported in the injected script, not ones starting with %v", script[:20])
 	}
 
 	// the shebang only is treated as a non-comment on the first line, so simply concatenating

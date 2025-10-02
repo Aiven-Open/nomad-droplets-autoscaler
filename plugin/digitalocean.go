@@ -293,11 +293,6 @@ func (t *TargetPlugin) getReadyNomadClients(ctx context.Context) (DropletIDs, er
 			"node_id", node.ID, "datacenter", node.Datacenter, "node_class", node.NodeClass, "node_pool", node.NodePool,
 			"status", node.Status, "eligibility", node.SchedulingEligibility, "draining", node.Drain, "all", fmt.Sprintf("%+v", node),
 		)
-		if node.Status != "ready" {
-			t.logger.Info("node is known as a nomad client but its status is not ready", "node ID", node.ID, "status", node.Status)
-			continue
-		}
-
 		if dropletID, exists := t.dropletMapping.Get(node.ID); exists {
 			// this node's droplet ID is already known, so include it
 			result[dropletID] = struct{}{}
@@ -317,6 +312,12 @@ func (t *TargetPlugin) getReadyNomadClients(ctx context.Context) (DropletIDs, er
 			t.logger.Debug("cannot find droplet ID", "NodeID", node.ID, "attributes", node.Attributes, "err", err)
 			continue
 		}
+
+		if node.Status != "ready" {
+			t.logger.Info("node is known as a nomad client but its status is not ready", "node ID", node.ID, "status", node.Status)
+			continue
+		}
+
 		t.logger.Debug("Found droplet ID for node", "NodeID", node.ID, "droplet ID", dropletID)
 		numericID, err := strconv.Atoi(dropletID)
 		if err != nil {

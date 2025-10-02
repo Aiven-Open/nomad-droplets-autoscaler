@@ -50,6 +50,6 @@ func debounce(key string, fn func(), period time.Duration) {
 			return
 		}
 	}
-	go fn()
+	fn()
 	debounceMap[key] = time.Now()
 }

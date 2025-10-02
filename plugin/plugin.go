@@ -168,11 +168,6 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 		return fmt.Errorf("failed to describe DigitalOcedroplets: %w", err)
 	}
 
-	debounce("deleteOrphanedDroplets", func() {
-		t.logger.Info("performing periodic check for orphaned droplets")
-		deleteOrphanedDroplets(ctx, t.logger, t.client.Droplets(), t.getReadyNomadClients, template)
-	}, time.Minute*10)
-
 	diff, direction := t.calculateDirection(total, action.Count)
 
 	switch direction {
@@ -213,6 +208,15 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 	if err != nil {
 		return nil, err
 	}
+
+	// If it's been at least 10 minutes since the last check for orphaned
+	// droplets, run one now (in a separate goroutine)
+	go debounce("deleteOrphanedDroplets", func() {
+		t.logger.Info("performing periodic check for orphaned droplets")
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		deleteOrphanedDroplets(ctx, t.logger, t.client.Droplets(), t.getReadyNomadClients, template)
+	}, time.Minute*10)
 
 	total, active, err := t.countDroplets(t.ctx, template)
 	if err != nil {

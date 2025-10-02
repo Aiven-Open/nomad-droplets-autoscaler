@@ -40,7 +40,7 @@ func TestDeleteDropletsWhenFailedToJoinNomadCluster(t *testing.T) {
 			if tc.whitelisted {
 				whitelist[droplet.ID] = struct{}{}
 			}
-			deleteOrphanedDroplets(ctx, hclog.Default(), mock.Droplets(), func(ctx context.Context) (DropletIDs, error) { return whitelist, nil }, dt, 0)
+			deleteOrphanedDroplets(ctx, hclog.Default(), mock.Droplets(), func(ctx context.Context) (DropletIDs, error) { return whitelist, nil }, dt)
 			if tc.expectDelete {
 				require.NotContains(t, mock.droplets, droplet.ID)
 			} else {

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -29,4 +30,26 @@ func Must0(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+var (
+	debounceMap   map[string]time.Time // records the time the function was last run
+	debounceMutex *sync.Mutex
+)
+
+func init() {
+	debounceMap = make(map[string]time.Time)
+	debounceMutex = new(sync.Mutex)
+}
+
+func debounce(key string, fn func(), period time.Duration) {
+	debounceMutex.Lock()
+	defer debounceMutex.Unlock()
+	if lastrun, found := debounceMap[key]; found {
+		if time.Since(lastrun) < period {
+			return
+		}
+	}
+	go fn()
+	debounceMap[key] = time.Now()
 }

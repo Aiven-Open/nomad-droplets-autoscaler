@@ -205,16 +205,6 @@ func (t *TargetPlugin) scaleOut(
 		errorList = append(errorList, err)
 	}
 
-	// Regardless of whether there were failures, schedule an orphaned-droplet check
-	if template.initGracePeriod > time.Second {
-		// Wait until enough time has passed so that if the newly-created droplet(s) are not yet
-		// participating in the nomad cluster, they will be considered orphaned.
-		// Add a minute to the grace period to allow for minor time disparities between
-		// the autoscaler clock and the droplets' creation times.
-		delay := template.initGracePeriod + time.Minute
-		go deleteOrphanedDroplets(ctx, t.logger, t.client.Droplets(), t.getReadyNomadClients, template, delay)
-	}
-
 	if len(errorList) > 0 {
 		return errors.Join(errorList...)
 	}
@@ -235,19 +225,12 @@ func (t *TargetPlugin) scaleOut(
 // and which were not recently created.
 // whitelistGenerator: provides a set of droplet IDs which are expected; any other
 // droplets will be assessed and potentially deleted.
-// delay: the time to wait before looking for orphans
 func deleteOrphanedDroplets(ctx context.Context,
 	logger hclog.Logger,
 	dropletsService Droplets,
 	whitelistGenerator func(ctx context.Context) (DropletIDs, error),
 	template *dropletTemplate,
-	delay time.Duration,
 ) {
-	if err := Sleep(ctx, delay); err != nil {
-		logger.Info("context was cancelled, so not checking for orphaned droplets")
-		return
-	}
-
 	whitelist, err := whitelistGenerator(ctx)
 	if err != nil {
 		logger.Error("cannot determine which droplets are whitelisted: %w", err)

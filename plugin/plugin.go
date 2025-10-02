@@ -168,6 +168,11 @@ func (t *TargetPlugin) Scale(action sdk.ScalingAction, config map[string]string)
 		return fmt.Errorf("failed to describe DigitalOcedroplets: %w", err)
 	}
 
+	debounce("deleteOrphanedDroplets", func() {
+		t.logger.Info("performing periodic check for orphaned droplets")
+		deleteOrphanedDroplets(ctx, t.logger, t.client.Droplets(), t.getReadyNomadClients, template)
+	}, time.Minute*10)
+
 	diff, direction := t.calculateDirection(total, action.Count)
 
 	switch direction {

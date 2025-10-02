@@ -67,7 +67,8 @@ check "hashistack-allocated-cpu" {
 
 - `snapshot_id` `(string: <required>)` - The Droplet image ID.
 
-- `user_data` `(string: "")` - A string of the desired User Data for the Droplet or a path to a file containing the User Data
+- `user_data` `(string: "")` - A (raw or base64-encoded) string of the desired User Data for the Droplet,
+  or a path to a file containing the User Data
 
 - `ssh_keys` `(string: "")` - A comma-separated list of SSH fingerprints to enable
 

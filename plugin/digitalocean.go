@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -117,8 +118,14 @@ func (t *TargetPlugin) scaleOut(
 						// file was found at this location, so use its content
 						createRequest.UserData = string(content)
 					} else {
-						// assume the string contains the user data
-						createRequest.UserData = template.userData
+						// assume the string contains the user data, which
+						// maybe be base64-encoded
+						decodedData, err := base64.StdEncoding.DecodeString(template.userData)
+						if err == nil {
+							createRequest.UserData = string(decodedData)
+						} else {
+							createRequest.UserData = template.userData
+						}
 					}
 				}
 

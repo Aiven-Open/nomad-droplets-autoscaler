@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"slices"
 	"strconv"
@@ -257,7 +258,7 @@ func deleteOrphanedDroplets(ctx context.Context,
 			}
 
 			if _, err := dropletsService.Delete(ctx, droplet.ID); err == nil {
-				logger.Info("deleted orphaned droplet", "droplet ID", droplet.ID)
+				logger.Info("deleted orphaned droplet", slog.Int("droplet ID", droplet.ID), slog.Duration("age", time.Since(dt)))
 			} else {
 				logger.Error("cannot delete droplet", "error", err, "droplet ID", droplet.ID)
 			}
@@ -303,7 +304,7 @@ func (t *TargetPlugin) getReadyNomadClients(ctx context.Context) (DropletIDs, er
 			continue
 		}
 
-		// The summary daa returned by client.Nodes() does not contain sufficient metadaa to determine
+		// The summary data returned by client.Nodes() does not contain sufficient metadaa to determine
 		// the droplet ID; a follow-up call to `Info()` is required.
 		node, _, err := client.Nodes().Info(node.ID, &q)
 		if err != nil {
@@ -312,7 +313,8 @@ func (t *TargetPlugin) getReadyNomadClients(ctx context.Context) (DropletIDs, er
 		}
 		dropletID, ok := node.Attributes["unique.platform.digitalocean.id"]
 		if !ok || dropletID == "" {
-			t.logger.Warn("cannot find droplet ID", "NodeID", node.ID, "attributes", node.Attributes, "node", fmt.Sprintf("%+v", node), "err", err)
+			// this is probably not a DO node; maybe running on AWS or GCP?
+			t.logger.Debug("cannot find droplet ID", "NodeID", node.ID, "attributes", node.Attributes, "err", err)
 			continue
 		}
 		t.logger.Debug("Found droplet ID for node", "NodeID", node.ID, "droplet ID", dropletID)

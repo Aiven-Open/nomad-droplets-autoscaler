@@ -617,7 +617,9 @@ ROLE_ID="%v"
 VAULT_ADDR="%v"
 export VAULT_ADDR
 TAGS_TEMPFILE=@mktemp@
-cd "%v"
+SI_DIRECTORY="%v"
+[[ -d "$SI_DIRECTORY"]] || mkdir -p "$SI_DIRECTORY"
+cd "$SI_DIRECTORY"
 for I in @seq 1 60@ ; do
     if curl -o "$TAGS_TEMPFILE" http://169.254.169.254/metadata/v1/tags ; then
         if [[ -f "$TAGS_TEMPFILE" ]] ; then

@@ -212,7 +212,6 @@ func (t *TargetPlugin) Status(config map[string]string) (*sdk.TargetStatus, erro
 	// If it's been at least 10 minutes since the last check for orphaned
 	// droplets, run one now (in a separate goroutine)
 	go debounce("deleteOrphanedDroplets", func() {
-		t.logger.Info("performing periodic check for orphaned droplets")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		deleteOrphanedDroplets(ctx, t.logger, t.client.Droplets(), t.getReadyNomadClients, template)

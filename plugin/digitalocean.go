@@ -253,7 +253,7 @@ func deleteOrphanedDroplets(ctx context.Context,
 				continue
 			}
 			if time.Since(dt) < template.initGracePeriod {
-				logger.Debug("Droplet was very recently created. Not treating as an orphan", "droplet ID", droplet.ID)
+				logger.Debug("Droplet was very recently created. Not treating as an orphan", "droplet ID", droplet.ID, slog.String("status", droplet.Status))
 				continue
 			}
 

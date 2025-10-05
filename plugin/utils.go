@@ -2,30 +2,9 @@ package plugin
 
 import (
 	"context"
-	"iter"
-	"slices"
+	"sync"
 	"time"
 )
-
-// CollectError returns a slice of []K elements, gathered from
-// a iter.Seq2 collection of [*K, error] pairs.
-// If any element's error is non-nil, the slice will be nil,
-// and the error will be returned.
-func CollectError[T any](seq iter.Seq2[T, error]) ([]T, error) {
-	var err error
-	result := slices.Collect[T](func(yield func(t T) bool) {
-		for k, v := range seq {
-			if v != nil {
-				err = v
-				return
-			}
-			if !yield(k) {
-				return
-			}
-		}
-	})
-	return result, err
-}
 
 func Sleep(ctx context.Context, duration time.Duration) error {
 	timer := time.NewTimer(duration)
@@ -38,16 +17,6 @@ func Sleep(ctx context.Context, duration time.Duration) error {
 	}
 }
 
-func countIf[T any](items []T, predicate func(T) bool) int64 {
-	var count int64 = 0
-	for _, item := range items {
-		if predicate(item) {
-			count += 1
-		}
-	}
-	return count
-}
-
 // Must panics if it is given a non-nil error.
 // Otherwise, it returns the first argument
 func Must[T any](result T, err error) T {
@@ -55,4 +24,32 @@ func Must[T any](result T, err error) T {
 		panic(err)
 	}
 	return result
+}
+
+func Must0(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+var (
+	debounceMap   map[string]time.Time // records the time the function was last run
+	debounceMutex *sync.Mutex
+)
+
+func init() {
+	debounceMap = make(map[string]time.Time)
+	debounceMutex = new(sync.Mutex)
+}
+
+func debounce(key string, fn func(), period time.Duration) {
+	debounceMutex.Lock()
+	defer debounceMutex.Unlock()
+	if lastrun, found := debounceMap[key]; found {
+		if time.Since(lastrun) < period {
+			return
+		}
+	}
+	fn()
+	debounceMap[key] = time.Now()
 }

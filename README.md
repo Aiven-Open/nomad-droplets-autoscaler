@@ -35,6 +35,7 @@ check "hashistack-allocated-cpu" {
   # ...
   target "do-droplets" {
     create_reserved_addresses                    = "true"
+    init_grace_period                            = "10m"
     ipv6                                         = "true"
     name                                         = "hashi-worker"
     node_class                                   = "hashistack"
@@ -56,6 +57,8 @@ check "hashistack-allocated-cpu" {
 
 - `name` `(string: <required>)` - A logical name of a Droplet "group". Every managed Droplet will be tagged with this value and its name is this value with a random suffix
 
+- `init_grace_period` `(duration: "0m")` Any droplets tagged with the `name` value which are older than this duration and still not recognised as a nomad client are considered to be orphans, and will be deleted at a subsequent scale-in event. Setting this to zero will disable this feature.
+
 - `region` `(string: <required>)` - The region to start in.
 
 - `vpc_uuid` `(string: <required>)` - The ID of the VPC where the Droplet will be located.
@@ -64,7 +67,8 @@ check "hashistack-allocated-cpu" {
 
 - `snapshot_id` `(string: <required>)` - The Droplet image ID.
 
-- `user_data` `(string: "")` - A string of the desired User Data for the Droplet or a path to a file containing the User Data
+- `user_data` `(string: "")` - A (raw or base64-encoded) string of the desired User Data for the Droplet,
+  or a path to a file containing the User Data
 
 - `ssh_keys` `(string: "")` - A comma-separated list of SSH fingerprints to enable
 
@@ -95,7 +99,7 @@ check "hashistack-allocated-cpu" {
 
 - `secure_introduction_wrapped_secret_validity` `(duration: <required if approle is defined>)` The duration the request wrapper for the SecretID is valid for, from the time it is generated.
 
-- `secure_introduction_filename` `(string: <required if approle is defined>)` The filename to store the unwrapped SecretID in
+- `secure_introduction_directory` `(string: "/run/vault-agent/")` The directory to store the unwrapped SecretID in, along with the RoleID
 
 ### Secure Introduction
 

@@ -28,6 +28,14 @@ func (v *mockVaultProxy) GenerateSecretId(
 	return "abcd", nil
 }
 
+func (v *mockVaultProxy) GetRoleId(ctx context.Context, appRole string) (string, error) {
+	return "mock role ID", nil
+}
+
+func (v *mockVaultProxy) GetAddress() string {
+	return "mock vault address"
+}
+
 type mockGodo struct {
 	counterDropletID atomic.Int32
 	counterV4        atomic.Int32
@@ -116,10 +124,10 @@ func (m *mockReservedIPs) Create(
 	result := godo.ReservedIP{Region: &r, IP: ipv4}
 	m.mock.reservedIPv4s = append(m.mock.reservedIPv4s, result)
 	/*
-		m.mock.prereservedIPv4s[ipv4] = PrereservedIP{
-			expiryTime: m.clock.Now().Add(time.Minute),
-			reservedIP: &result,
-		}
+	   m.mock.prereservedIPv4s[ipv4] = PrereservedIP{
+	       expiryTime: m.clock.Now().Add(time.Minute),
+	       reservedIP: &result,
+	   }
 	*/
 	return &result, nil, nil
 }
@@ -196,6 +204,7 @@ func (m *mockDroplets) Create(
 		Tags:     req.Tags,
 		Status:   "active",
 		Networks: networks,
+		Created:  time.Now().Format(time.RFC3339),
 	}
 	m.mock.dropletUserData[droplet.ID] = req.UserData
 	m.mock.droplets[droplet.ID] = droplet

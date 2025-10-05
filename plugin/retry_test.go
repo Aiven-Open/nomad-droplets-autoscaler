@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 )
 
 func Test_retry(t *testing.T) {
+	anError := errors.New("an error")
 	testCases := []struct {
 		inputContext   context.Context
 		inputInterval  time.Duration
@@ -34,9 +36,9 @@ func Test_retry(t *testing.T) {
 			inputInterval: 1 * time.Microsecond,
 			inputRetry:    1,
 			inputFunc: func(ctx context.Context, cancel context.CancelCauseFunc) error {
-				return errors.New("error")
+				return anError
 			},
-			expectedOutput: errors.New("reached retry limit"),
+			expectedOutput: fmt.Errorf("reached retry limit: %w", anError),
 			name:           "function never successful and reaches retry limit",
 		},
 	}

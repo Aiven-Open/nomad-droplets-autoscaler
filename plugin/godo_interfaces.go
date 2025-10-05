@@ -53,6 +53,19 @@ type Tags interface {
 	Delete(context.Context, string) (*godo.Response, error)
 }
 
+// Unarg is passed a godo List* function which takes an argument
+// prior to the ListOptions, along with the argument's value.
+// It allows the Unpaginate generic function to be used.
+// e.g.:
+// Unpaginate(ctx, Unarg(dropletsService.ListByTag, template.name), godo.ListOptions{})
+func Unarg[S any, T any](f func(context.Context, S, *godo.ListOptions) ([]T, *godo.Response, error), arg S) func(context.Context, *godo.ListOptions) ([]T, *godo.Response, error) {
+	return func(ctx context.Context, opt *godo.ListOptions) ([]T, *godo.Response, error) {
+		return f(ctx, arg, opt)
+	}
+}
+
+// Unpaginate repeatedly calls a paginated List* function, returning
+// an iterable of the returned object type.
 func Unpaginate[T any](ctx context.Context, f func(ctx context.Context, opt *godo.ListOptions) ([]T, *godo.Response, error), opt godo.ListOptions) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		var buffer T

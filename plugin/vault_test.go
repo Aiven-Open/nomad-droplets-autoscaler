@@ -4,12 +4,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMockVault(t *testing.T) {
 	ctx := t.Context()
-	v, err := NewVault()
+	logger := hclog.New(&hclog.LoggerOptions{
+		Name:  "my-app",
+		Level: hclog.LevelFromString("DEBUG"),
+	})
+	v, err := NewVault(ctx, logger, WithStaticToken([]byte("foo")), WithStaticAddress([]byte("bar")))
 	require.NoError(t, err)
 	secret, err := v.GenerateSecretId(ctx, "mock", "1.2.3.4", "fe80::/10", time.Minute, time.Minute)
 	require.NoError(t, err)
